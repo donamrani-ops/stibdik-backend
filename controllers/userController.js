@@ -27,10 +27,82 @@ exports.updateProfile = async (req, res, next) => {
   }
 };
 
+// ═══════════════════════════════════════════════════════════
+//  ADMIN ENDPOINTS
+// ═══════════════════════════════════════════════════════════
+
+// Create user (Admin only)
+exports.createUser = async (req, res, next) => {
+  try {
+    const { name, email, password, phone, shopName, role, status } = req.body;
+
+    // Check if user exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'Cet email est déjà utilisé' });
+    }
+
+    // Create user
+    const user = await User.create({
+      name,
+      email,
+      password,
+      phone,
+      shopName,
+      role: role || 'customer',
+      status: status || 'active'
+    });
+
+    // Return user without password
+    const userResponse = await User.findById(user._id).select('-password');
+
+    res.status(201).json({
+      success: true,
+      message: 'Utilisateur créé avec succès',
+      user: userResponse
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update user (Admin only)
+exports.updateUser = async (req, res, next) => {
+  try {
+    const { name, email, phone, shopName, role, status } = req.body;
+
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+
+    // Update fields
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (phone !== undefined) user.phone = phone;
+    if (shopName !== undefined) user.shopName = shopName;
+    if (role) user.role = role;
+    if (status) user.status = status;
+
+    await user.save();
+
+    const updatedUser = await User.findById(user._id).select('-password');
+
+    res.status(200).json({
+      success: true,
+      message: 'Utilisateur mis à jour',
+      user: updatedUser
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Get all users (Admin)
 exports.getAllUsers = async (req, res, next) => {
   try {
-    const { role, status, page = 1, limit = 20 } = req.query;
+    const { role, status, page = 1, limit = 100 } = req.query;
     const query = {};
     
     if (role) query.role = role;
