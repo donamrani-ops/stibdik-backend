@@ -11,9 +11,11 @@ router.use(protect);
 router.get('/profile', userController.getProfile);
 router.put('/profile', userController.updateProfile);
 
-// Admin only
+// Admin only - CRUD complet
+router.post('/', authorize('admin'), userController.createUser);
 router.get('/', authorize('admin'), userController.getAllUsers);
 router.get('/:id', authorize('admin'), userController.getUser);
+router.put('/:id', authorize('admin'), userController.updateUser);
 router.put('/:id/status', authorize('admin'), userController.updateUserStatus);
 router.delete('/:id', authorize('admin'), userController.deleteUser);
 
