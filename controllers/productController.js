@@ -29,7 +29,7 @@ exports.getAllProducts = async (req, res, next) => {
 exports.getProduct = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id)
-      .populate('vendor', 'name shopName shopLogo')
+      .populate('vendor', 'name shopName shopLogo phone email')
       .populate('category', 'name nameAr icon');
 
     if (!product) {
