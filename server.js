@@ -39,13 +39,60 @@ const PORT = process.env.PORT || 5000;
 // Helmet - Sécurité headers HTTP
 app.use(helmet());
 
-// CORS - Autoriser le frontend
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+// CORS - Autoriser plusieurs origines (frontend principal + previews Netlify + localhost)
+//
+// Configuration via variable d'environnement FRONTEND_URLS (liste séparée par virgules)
+// ou fallback sur FRONTEND_URL (single, pour rétrocompatibilité)
+//
+// Exemples de valeurs valides pour FRONTEND_URLS:
+//   "https://stibdik.ma,https://astounding-rugelach-d6ff69.netlify.app,http://localhost:3000"
+//
+// Les patterns Netlify de type "*--<site>.netlify.app" sont automatiquement acceptés
+// pour le site principal, ce qui permet les deploy previews sans reconfiguration.
+
+const allowedOrigins = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+// Extraire les "site_name" Netlify pour autoriser leurs deploy previews
+// Ex: si "https://my-site.netlify.app" est listé, on autorise aussi "https://abc123--my-site.netlify.app"
+const netlifyPreviewBaseSites = allowedOrigins
+  .map(origin => {
+    const match = origin.match(/^https?:\/\/(?:[^.]+--)?([a-z0-9-]+)\.netlify\.app$/i);
+    return match ? match[1].toLowerCase() : null;
+  })
+  .filter(Boolean);
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Pas d'origin (ex: requêtes server-to-server, curl, Postman) → on autorise
+    if (!origin) return callback(null, true);
+
+    // Match exact dans la whitelist
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    // Match wildcard Netlify previews (xxx--site.netlify.app)
+    const previewMatch = origin.match(/^https?:\/\/[a-z0-9-]+--([a-z0-9-]+)\.netlify\.app$/i);
+    if (previewMatch && netlifyPreviewBaseSites.includes(previewMatch[1].toLowerCase())) {
+      return callback(null, true);
+    }
+
+    // Refus
+    console.warn(`⚠️  CORS rejected origin: ${origin}`);
+    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization']
-}));
+};
+
+console.log(`🔓 CORS allowed origins: ${allowedOrigins.join(', ')}`);
+if (netlifyPreviewBaseSites.length) {
+  console.log(`🔓 Netlify preview wildcards: ${netlifyPreviewBaseSites.map(s => `*--${s}.netlify.app`).join(', ')}`);
+}
+
+app.use(cors(corsOptions));
 
 // Rate limiting - Protection contre force brute
 const limiter = rateLimit({
