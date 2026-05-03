@@ -1,6 +1,16 @@
 // Model: Quote (Demande de devis / RFQ)
 const mongoose = require('mongoose');
 
+// Sous-schéma pour le snapshot produit
+// Note: on utilise un sous-schéma explicite pour éviter que Mongoose interprète
+// le champ "type" du snapshot comme une définition de type pour le champ parent.
+const productSnapshotSchema = new mongoose.Schema({
+  nameFr: { type: String },
+  nameAr: { type: String },
+  image: { type: String },
+  type: { type: String }
+}, { _id: false });
+
 const quoteSchema = new mongoose.Schema({
   // Lien vers le produit
   product: {
@@ -10,10 +20,8 @@ const quoteSchema = new mongoose.Schema({
   },
   // Snapshot du produit (au cas où il est supprimé après)
   productSnapshot: {
-    nameFr: String,
-    nameAr: String,
-    image: String,
-    type: String
+    type: productSnapshotSchema,
+    default: () => ({})
   },
 
   // Vendeur destinataire (récupéré automatiquement depuis product.vendor)
