@@ -22,6 +22,7 @@ const categoryRoutes = require('./routes/categories');
 const orderRoutes = require('./routes/orders');
 const uploadRoutes = require('./routes/upload');
 const paymentRoutes = require('./routes/payment');
+const quoteRoutes = require('./routes/quotes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -40,12 +41,11 @@ app.use(helmet());
 
 // CORS - Autoriser le frontend
 app.use(cors({
-  origin: '*', // Permet toutes les origines
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 
 // Rate limiting - Protection contre force brute
 const limiter = rateLimit({
@@ -98,6 +98,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/quotes', quoteRoutes);
 
 // Route non trouvée
 app.use(notFound);
