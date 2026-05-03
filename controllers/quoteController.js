@@ -17,6 +17,14 @@ exports.createQuote = async (req, res, next) => {
       });
     }
 
+    // Validation du format ObjectId
+    if (typeof product !== 'string' || !product.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID produit invalide'
+      });
+    }
+
     // Récupérer le produit pour vérifier qu'il existe et qu'il est de type rfq
     const productDoc = await Product.findById(product);
     if (!productDoc) {
@@ -28,26 +36,25 @@ exports.createQuote = async (req, res, next) => {
       console.warn(`Quote créée pour un produit non-rfq (type=${productDoc.type}, id=${product})`);
     }
 
-    // Snapshot
-    const snapshot = {
-      nameFr: productDoc.nameFr,
-      nameAr: productDoc.nameAr,
-      image: productDoc.images?.[0]?.url || null,
-      type: productDoc.type
-    };
+    // Snapshot — on ne stocke que des strings, pas de null
+    const snapshot = {};
+    if (productDoc.nameFr) snapshot.nameFr = String(productDoc.nameFr);
+    if (productDoc.nameAr) snapshot.nameAr = String(productDoc.nameAr);
+    if (productDoc.images?.[0]?.url) snapshot.image = String(productDoc.images[0].url);
+    if (productDoc.type) snapshot.type = String(productDoc.type);
 
     const quote = await Quote.create({
       product,
       productSnapshot: snapshot,
       vendor: productDoc.vendor,
       requester: {
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        phone: phone ? phone.trim() : '',
+        name: String(name).trim(),
+        email: String(email).trim().toLowerCase(),
+        phone: phone ? String(phone).trim() : '',
         userId: req.user ? req.user._id : null
       },
       quantity: parseInt(quantity, 10),
-      message: message.trim(),
+      message: String(message).trim(),
       status: 'new',
       isUnread: true
     });
