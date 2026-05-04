@@ -67,6 +67,17 @@ const userSchema = new mongoose.Schema({
     type: String, // URL Cloudinary
     default: null
   },
+
+  // Wishlist : liste de produits favoris (références ObjectId vers Product)
+  // Stockée directement sur le user pour récupération rapide en 1 seul .populate()
+  // L'index permet des queries efficaces "est-ce que ce produit est dans la wishlist d'un user ?"
+  wishlist: {
+    type: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product'
+    }],
+    default: []
+  },
   
   // Vérifications
   isEmailVerified: {
