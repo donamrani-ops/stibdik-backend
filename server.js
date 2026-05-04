@@ -23,6 +23,7 @@ const orderRoutes = require('./routes/orders');
 const uploadRoutes = require('./routes/upload');
 const paymentRoutes = require('./routes/payment');
 const quoteRoutes = require('./routes/quotes');
+const wishlistRoutes = require('./routes/wishlist');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -146,6 +147,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/quotes', quoteRoutes);
+app.use('/api/wishlist', wishlistRoutes);
 
 // Route non trouvée
 app.use(notFound);
