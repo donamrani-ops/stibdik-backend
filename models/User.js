@@ -181,11 +181,15 @@ userSchema.methods.getPublicProfile = function() {
     id: this._id,
     name: this.name,
     email: this.email,
+    phone: this.phone,
     role: this.role,
     avatar: this.avatar || this.getInitials(),
     shopName: this.shopName,
     shopDescription: this.shopDescription,
     shopLogo: this.shopLogo,
+    addresses: this.addresses,
+    status: this.status,
+    isVerified: this.isVerified,
     stats: this.role === 'vendor' ? this.stats : undefined,
     createdAt: this.createdAt
   };
