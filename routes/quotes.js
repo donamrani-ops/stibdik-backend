@@ -31,6 +31,9 @@ router.post('/', tryAttachUser, quoteController.createQuote);
 // PROTECTED: tout le reste exige un user authentifié
 router.use(protect);
 
+// Admin only — toutes les quotes (cross-vendors, pour audit)
+router.get('/admin/all', authorize('admin'), quoteController.getAllQuotes);
+
 // Vendor / Admin
 router.get('/received', authorize('vendor', 'admin'), quoteController.getReceivedQuotes);
 router.get('/stats', authorize('vendor', 'admin'), quoteController.getVendorQuoteStats);

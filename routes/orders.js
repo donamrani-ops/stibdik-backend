@@ -14,6 +14,9 @@ router.get('/my-orders', orderController.getMyOrders);
 // Vendor routes
 router.get('/vendor-orders', authorize('vendor', 'admin'), orderController.getVendorOrders);
 
+// Admin only — toutes les commandes (paginate + filtres)
+router.get('/admin/all', authorize('admin'), orderController.getAllOrders);
+
 // Order details & updates
 router.get('/:id', orderController.getOrder);
 router.patch('/:id/status', orderController.updateOrderStatus);
