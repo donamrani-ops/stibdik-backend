@@ -79,6 +79,42 @@ exports.getVendorOrders = async (req, res, next) => {
   }
 };
 
+// Get all orders (Admin) — paginated + filtered
+exports.getAllOrders = async (req, res, next) => {
+  try {
+    const { status, page = 1, limit = 20, query } = req.query;
+    const filter = {};
+
+    if (status) filter.status = status;
+
+    // Recherche par numéro de commande (orderNumber)
+    if (query) {
+      filter.orderNumber = { $regex: query, $options: 'i' };
+    }
+
+    const orders = await Order.find(filter)
+      .populate('product', 'nameFr images')
+      .populate('buyer', 'name email')
+      .populate('vendor', 'name shopName email')
+      .sort('-createdAt')
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Order.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      count: orders.length,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+      orders
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Get single order
 exports.getOrder = async (req, res, next) => {
   try {

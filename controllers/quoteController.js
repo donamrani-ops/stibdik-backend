@@ -215,3 +215,43 @@ exports.deleteQuote = async (req, res, next) => {
     next(error);
   }
 };
+
+// ═══════════════════════════════════════════════════════════
+// ADMIN: getAllQuotes — Lecture seule de toutes les quotes
+// pour audit/modération
+// ═══════════════════════════════════════════════════════════
+exports.getAllQuotes = async (req, res, next) => {
+  try {
+    const { status, page = 1, limit = 20, query } = req.query;
+    const filter = {};
+
+    if (status) filter.status = status;
+
+    // Recherche par nom/email du demandeur
+    if (query) {
+      filter.$or = [
+        { 'requester.name': { $regex: query, $options: 'i' } },
+        { 'requester.email': { $regex: query, $options: 'i' } }
+      ];
+    }
+
+    const quotes = await Quote.find(filter)
+      .populate('vendor', 'name shopName email')
+      .sort('-createdAt')
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Quote.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      count: quotes.length,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+      quotes
+    });
+  } catch (error) {
+    next(error);
+  }
+};
