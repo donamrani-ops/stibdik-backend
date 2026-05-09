@@ -7,6 +7,8 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
+const { googleAuth } = require('../controllers/authController');
+router.post('/google', googleAuth);
 
 // @route   POST /api/auth/register
 // @desc    Register new user
