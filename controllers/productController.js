@@ -33,9 +33,22 @@ exports.getAllProducts = async (req, res, next) => {
       filter.vendor = seller;
     }
 
-    // Filtre catégorie
+    // Filtre catégorie — accepte un _id MongoDB OU un slug texte
     if (category) {
-      filter.category = category;
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(category)) {
+        // C'est un _id MongoDB valide → on l'utilise directement
+        filter.category = category;
+      } else {
+        // C'est un slug (ex: "electronique") → on résout vers l'_id
+        const cat = await Category.findOne({ slug: category, active: true }).select('_id');
+        if (cat) {
+          filter.category = cat._id;
+        } else {
+          // Slug inconnu → aucun résultat
+          return res.status(200).json({ success: true, count: 0, total: 0, page: 1, pages: 0, products: [] });
+        }
+      }
     }
 
     // Filtre type
