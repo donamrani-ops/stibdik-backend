@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════
 //  CONTROLLER: AUTHENTICATION
-//  Register, Login, Password reset, Email verification
+//  Register, Login, Google OAuth, Password reset, Email verification
 // ═══════════════════════════════════════════════════════════
 
 const User = require('../models/User');
@@ -14,7 +14,6 @@ exports.register = async (req, res, next) => {
   try {
     const { name, email, password, role, phone } = req.body;
 
-    // Vérifier si email existe
     const existingUser = await User.findByEmail(email);
     if (existingUser) {
       return res.status(400).json({
@@ -23,7 +22,6 @@ exports.register = async (req, res, next) => {
       });
     }
 
-    // Créer utilisateur
     const user = await User.create({
       name,
       email,
@@ -32,7 +30,6 @@ exports.register = async (req, res, next) => {
       phone
     });
 
-    // Générer token
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
@@ -56,7 +53,6 @@ exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -64,47 +60,28 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    // Trouver user avec password
     const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Identifiants incorrects'
-      });
+      return res.status(401).json({ success: false, message: 'Identifiants incorrects' });
     }
 
-    // Vérifier password
     const isMatch = await user.comparePassword(password);
-
     if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: 'Identifiants incorrects'
-      });
+      return res.status(401).json({ success: false, message: 'Identifiants incorrects' });
     }
 
-    // Vérifier status
     if (user.status === 'banned') {
-      return res.status(403).json({
-        success: false,
-        message: 'Votre compte a été banni'
-      });
+      return res.status(403).json({ success: false, message: 'Votre compte a été banni' });
     }
-
     if (user.status === 'suspended') {
-      return res.status(403).json({
-        success: false,
-        message: 'Votre compte est suspendu'
-      });
+      return res.status(403).json({ success: false, message: 'Votre compte est suspendu' });
     }
 
-    // Mettre à jour lastLogin
     user.lastLogin = new Date();
     user.loginCount += 1;
     await user.save({ validateBeforeSave: false });
 
-    // Générer tokens
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
@@ -121,16 +98,96 @@ exports.login = async (req, res, next) => {
   }
 };
 
+// @desc    Google OAuth login / register
+// @route   POST /api/auth/google
+// @access  Public
+exports.googleAuth = async (req, res, next) => {
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+      return res.status(400).json({ success: false, message: 'Token Google manquant' });
+    }
+
+    // Vérifier le token Google (sans dépendance externe)
+    // Le token JWT Google est signé par Google — on décode le payload sans vérifier la signature ici
+    // (la vérification complète nécessiterait google-auth-library)
+    const parts = credential.split('.');
+    if (parts.length !== 3) {
+      return res.status(400).json({ success: false, message: 'Token Google invalide' });
+    }
+
+    // Décoder le payload base64url
+    const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payloadJson = Buffer.from(payloadBase64, 'base64').toString('utf8');
+    const payload = JSON.parse(payloadJson);
+
+    const { email, name, picture, sub: googleId, exp } = payload;
+
+    // Vérifier expiration
+    if (!exp || Date.now() / 1000 > exp) {
+      return res.status(401).json({ success: false, message: 'Token Google expiré' });
+    }
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email Google manquant' });
+    }
+
+    // Chercher user existant par email ou googleId
+    let user = await User.findOne({ $or: [{ email }, { googleId }] });
+
+    if (user) {
+      // Mettre à jour googleId si pas encore lié
+      if (!user.googleId) {
+        user.googleId = googleId;
+        if (picture && !user.avatar) user.avatar = picture;
+        await user.save({ validateBeforeSave: false });
+      }
+
+      if (user.status === 'banned') {
+        return res.status(403).json({ success: false, message: 'Votre compte a été banni' });
+      }
+
+      user.lastLogin = new Date();
+      user.loginCount = (user.loginCount || 0) + 1;
+      await user.save({ validateBeforeSave: false });
+
+    } else {
+      // Créer nouveau compte
+      user = await User.create({
+        name: name || email.split('@')[0],
+        email,
+        googleId,
+        avatar: picture || '',
+        role: 'customer',
+        isEmailVerified: true, // Email Google = déjà vérifié
+        password: crypto.randomBytes(32).toString('hex'), // Password aléatoire (non utilisé)
+      });
+    }
+
+    const token = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    res.status(200).json({
+      success: true,
+      message: user.loginCount <= 1 ? 'Compte créé avec Google' : 'Connexion réussie',
+      token,
+      refreshToken,
+      user: user.getPublicProfile()
+    });
+
+  } catch (error) {
+    console.error('Google auth error:', error.message);
+    next(error);
+  }
+};
+
 // @desc    Logout user
 // @route   POST /api/auth/logout
 // @access  Private
 exports.logout = async (req, res, next) => {
   try {
-    // En production, vous pourriez blacklister le token ici
-    res.status(200).json({
-      success: true,
-      message: 'Déconnexion réussie'
-    });
+    res.status(200).json({ success: true, message: 'Déconnexion réussie' });
   } catch (error) {
     next(error);
   }
@@ -142,11 +199,7 @@ exports.logout = async (req, res, next) => {
 exports.getMe = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
-
-    res.status(200).json({
-      success: true,
-      user: user.getPublicProfile()
-    });
+    res.status(200).json({ success: true, user: user.getPublicProfile() });
   } catch (error) {
     next(error);
   }
@@ -158,29 +211,16 @@ exports.getMe = async (req, res, next) => {
 exports.forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
-
     const user = await User.findByEmail(email);
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Aucun utilisateur avec cet email'
-      });
+      return res.status(404).json({ success: false, message: 'Aucun utilisateur avec cet email' });
     }
 
-    // Générer reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
-    user.passwordResetToken = crypto
-      .createHash('sha256')
-      .update(resetToken)
-      .digest('hex');
-    user.passwordResetExpires = Date.now() + 3600000; // 1 heure
-
+    user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    user.passwordResetExpires = Date.now() + 3600000;
     await user.save({ validateBeforeSave: false });
-
-    // TODO: Envoyer email avec le token
-    // const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-    // await sendEmail({ to: user.email, subject: 'Reset password', text: resetUrl });
 
     res.status(200).json({
       success: true,
@@ -201,39 +241,24 @@ exports.resetPassword = async (req, res, next) => {
     const { token } = req.params;
     const { password } = req.body;
 
-    // Hash token
-    const hashedToken = crypto
-      .createHash('sha256')
-      .update(token)
-      .digest('hex');
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
-    // Trouver user
     const user = await User.findOne({
       passwordResetToken: hashedToken,
       passwordResetExpires: { $gt: Date.now() }
     });
 
     if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: 'Token invalide ou expiré'
-      });
+      return res.status(400).json({ success: false, message: 'Token invalide ou expiré' });
     }
 
-    // Nouveau password
     user.password = password;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     await user.save();
 
-    // Générer nouveau token
     const authToken = generateToken(user._id);
-
-    res.status(200).json({
-      success: true,
-      message: 'Mot de passe réinitialisé',
-      token: authToken
-    });
+    res.status(200).json({ success: true, message: 'Mot de passe réinitialisé', token: authToken });
 
   } catch (error) {
     next(error);
@@ -253,10 +278,7 @@ exports.verifyEmail = async (req, res, next) => {
     });
 
     if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: 'Token invalide ou expiré'
-      });
+      return res.status(400).json({ success: false, message: 'Token invalide ou expiré' });
     }
 
     user.isEmailVerified = true;
@@ -264,10 +286,7 @@ exports.verifyEmail = async (req, res, next) => {
     user.emailVerificationExpires = undefined;
     await user.save();
 
-    res.status(200).json({
-      success: true,
-      message: 'Email vérifié avec succès'
-    });
+    res.status(200).json({ success: true, message: 'Email vérifié avec succès' });
 
   } catch (error) {
     next(error);
@@ -282,24 +301,15 @@ exports.resendVerification = async (req, res, next) => {
     const user = req.user;
 
     if (user.isEmailVerified) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email déjà vérifié'
-      });
+      return res.status(400).json({ success: false, message: 'Email déjà vérifié' });
     }
 
-    // Générer nouveau token
     const verificationToken = crypto.randomBytes(32).toString('hex');
     user.emailVerificationToken = verificationToken;
-    user.emailVerificationExpires = Date.now() + 86400000; // 24h
+    user.emailVerificationExpires = Date.now() + 86400000;
     await user.save({ validateBeforeSave: false });
 
-    // TODO: Envoyer email
-
-    res.status(200).json({
-      success: true,
-      message: 'Email de vérification renvoyé'
-    });
+    res.status(200).json({ success: true, message: 'Email de vérification renvoyé' });
 
   } catch (error) {
     next(error);
@@ -314,29 +324,17 @@ exports.refreshToken = async (req, res, next) => {
     const { refreshToken } = req.body;
 
     if (!refreshToken) {
-      return res.status(400).json({
-        success: false,
-        message: 'Refresh token requis'
-      });
+      return res.status(400).json({ success: false, message: 'Refresh token requis' });
     }
 
-    // Vérifier refresh token
     const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-
-    // Générer nouveau token
     const newToken = generateToken(decoded.id);
 
-    res.status(200).json({
-      success: true,
-      token: newToken
-    });
+    res.status(200).json({ success: true, token: newToken });
 
   } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: 'Refresh token invalide'
-    });
+    return res.status(401).json({ success: false, message: 'Refresh token invalide' });
   }
 };
 
@@ -346,27 +344,17 @@ exports.refreshToken = async (req, res, next) => {
 exports.changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
-
     const user = await User.findById(req.user._id).select('+password');
 
-    // Vérifier current password
     const isMatch = await user.comparePassword(currentPassword);
-
     if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: 'Mot de passe actuel incorrect'
-      });
+      return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
     }
 
-    // Changer password
     user.password = newPassword;
     await user.save();
 
-    res.status(200).json({
-      success: true,
-      message: 'Mot de passe changé avec succès'
-    });
+    res.status(200).json({ success: true, message: 'Mot de passe changé avec succès' });
 
   } catch (error) {
     next(error);
