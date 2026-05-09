@@ -4,13 +4,69 @@ const Category = require('../models/Category');
 // Get all products with filters
 exports.getAllProducts = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, category, city, minPrice, maxPrice, type, sort = '-createdAt' } = req.query;
-    
-    const products = await Product.advancedSearch({
-      category, city, minPrice, maxPrice, type, sort, page, limit
-    });
+    const {
+      page = 1,
+      limit = 20,
+      category,
+      city,
+      minPrice,
+      maxPrice,
+      type,
+      sort = '-createdAt',
+      query
+    } = req.query;
 
-    const total = await Product.countDocuments({ status: 'active' });
+    // Filtres de base
+    const filter = {
+      status: 'active'
+    };
+
+    if (category) {
+      filter.category = category;
+    }
+
+    if (city) {
+      filter.city = city;
+    }
+
+    if (type) {
+      filter.type = type;
+    }
+
+    // Gestion des prix
+    if (minPrice || maxPrice) {
+      filter.price = {};
+
+      if (minPrice) {
+        filter.price.$gte = Number(minPrice);
+      }
+
+      if (maxPrice) {
+        filter.price.$lte = Number(maxPrice);
+      }
+    }
+
+    // Recherche texte
+    if (query && query.trim()) {
+      const rx = new RegExp(query.trim(), 'i');
+
+      filter.$or = [
+        { title: rx },
+        { description: rx },
+        { tags: rx }
+      ];
+    }
+
+    // Récupération produits
+    const products = await Product.find(filter)
+      .populate('vendor', 'name shopName shopLogo')
+      .populate('category', 'name nameAr icon')
+      .sort(sort)
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    // Total produits filtrés
+    const total = await Product.countDocuments(filter);
 
     res.status(200).json({
       success: true,
@@ -20,6 +76,7 @@ exports.getAllProducts = async (req, res, next) => {
       pages: Math.ceil(total / limit),
       products
     });
+
   } catch (error) {
     next(error);
   }
@@ -33,10 +90,17 @@ exports.getProduct = async (req, res, next) => {
       .populate('category', 'name nameAr icon');
 
     if (!product) {
-      return res.status(404).json({ success: false, message: 'Produit non trouvé' });
+      return res.status(404).json({
+        success: false,
+        message: 'Produit non trouvé'
+      });
     }
 
-    res.status(200).json({ success: true, product });
+    res.status(200).json({
+      success: true,
+      product
+    });
+
   } catch (error) {
     next(error);
   }
@@ -50,7 +114,12 @@ exports.createProduct = async (req, res, next) => {
 
     const product = await Product.create(req.body);
 
-    res.status(201).json({ success: true, message: 'Produit créé', product });
+    res.status(201).json({
+      success: true,
+      message: 'Produit créé',
+      product
+    });
+
   } catch (error) {
     next(error);
   }
@@ -62,17 +131,38 @@ exports.updateProduct = async (req, res, next) => {
     let product = await Product.findById(req.params.id);
 
     if (!product) {
-      return res.status(404).json({ success: false, message: 'Produit non trouvé' });
+      return res.status(404).json({
+        success: false,
+        message: 'Produit non trouvé'
+      });
     }
 
     // Check ownership
-    if (product.vendor.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Non autorisé' });
+    if (
+      product.vendor.toString() !== req.user._id.toString() &&
+      req.user.role !== 'admin'
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Non autorisé'
+      });
     }
 
-    product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    product = await Product.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true
+      }
+    );
 
-    res.status(200).json({ success: true, message: 'Produit mis à jour', product });
+    res.status(200).json({
+      success: true,
+      message: 'Produit mis à jour',
+      product
+    });
+
   } catch (error) {
     next(error);
   }
@@ -84,16 +174,29 @@ exports.deleteProduct = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
 
     if (!product) {
-      return res.status(404).json({ success: false, message: 'Produit non trouvé' });
+      return res.status(404).json({
+        success: false,
+        message: 'Produit non trouvé'
+      });
     }
 
-    if (product.vendor.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Non autorisé' });
+    if (
+      product.vendor.toString() !== req.user._id.toString() &&
+      req.user.role !== 'admin'
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Non autorisé'
+      });
     }
 
     await product.deleteOne();
 
-    res.status(200).json({ success: true, message: 'Produit supprimé' });
+    res.status(200).json({
+      success: true,
+      message: 'Produit supprimé'
+    });
+
   } catch (error) {
     next(error);
   }
@@ -103,10 +206,15 @@ exports.deleteProduct = async (req, res, next) => {
 exports.incrementViews = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id);
+
     if (product) {
       await product.incrementViews();
     }
-    res.status(200).json({ success: true });
+
+    res.status(200).json({
+      success: true
+    });
+
   } catch (error) {
     next(error);
   }
@@ -116,13 +224,25 @@ exports.incrementViews = async (req, res, next) => {
 exports.getSimilarProducts = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id);
+
     if (!product) {
-      return res.status(404).json({ success: false, message: 'Produit non trouvé' });
+      return res.status(404).json({
+        success: false,
+        message: 'Produit non trouvé'
+      });
     }
 
-    const similar = await Product.findSimilar(product._id, product.category, 6);
+    const similar = await Product.findSimilar(
+      product._id,
+      product.category,
+      6
+    );
 
-    res.status(200).json({ success: true, products: similar });
+    res.status(200).json({
+      success: true,
+      products: similar
+    });
+
   } catch (error) {
     next(error);
   }
@@ -132,7 +252,12 @@ exports.getSimilarProducts = async (req, res, next) => {
 exports.getTrending = async (req, res, next) => {
   try {
     const products = await Product.getTrending(10);
-    res.status(200).json({ success: true, products });
+
+    res.status(200).json({
+      success: true,
+      products
+    });
+
   } catch (error) {
     next(error);
   }
