@@ -148,6 +148,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/reviews', require('./routes/reviews'));
 
 // Route non trouvée
 app.use(notFound);
