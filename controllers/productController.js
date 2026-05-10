@@ -163,9 +163,74 @@ exports.updateProduct = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Non autorisé' });
     }
 
-    product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    // Champs que le vendor peut modifier
+    const VENDOR_ALLOWED_FIELDS = [
+      'nameFr', 'nameAr', 'descFr', 'descAr', 'price', 'original',
+      'images', 'stock', 'condition', 'conditionAr', 'sizes', 'colors',
+      'city', 'type', 'variants', 'metaKeywords', 'expiresAt',
+    ];
+
+    // Champs réservés à l'admin uniquement
+    const ADMIN_ONLY_FIELDS = ['category', 'status', 'vendor', 'vendorName', 'badge', 'featured'];
+
+    let updateData;
+    if (req.user.role === 'admin') {
+      // Admin peut tout modifier sauf _id
+      const { _id, __v, createdAt, ...rest } = req.body;
+      updateData = rest;
+    } else {
+      // Vendor : whitelist stricte + refus des champs admin
+      const forbidden = Object.keys(req.body).filter(k => ADMIN_ONLY_FIELDS.includes(k));
+      if (forbidden.length > 0) {
+        return res.status(403).json({
+          success: false,
+          message: `Champs non autorisés : ${forbidden.join(', ')}`,
+        });
+      }
+      updateData = Object.fromEntries(
+        Object.entries(req.body).filter(([k]) => VENDOR_ALLOWED_FIELDS.includes(k))
+      );
+    }
+
+    product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
 
     res.status(200).json({ success: true, message: 'Produit mis à jour', product });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update product category — Admin uniquement (via PATCH /:id/category)
+exports.updateProductCategory = async (req, res, next) => {
+  try {
+    const { category } = req.body;
+
+    if (!category) {
+      return res.status(400).json({ success: false, message: 'Catégorie requise' });
+    }
+
+    // Résoudre slug → ObjectId si nécessaire
+    const mongoose = require('mongoose');
+    let categoryId = category;
+    if (!mongoose.Types.ObjectId.isValid(category)) {
+      const cat = await Category.findOne({ slug: category, active: true }).select('_id');
+      if (!cat) {
+        return res.status(404).json({ success: false, message: 'Catégorie introuvable' });
+      }
+      categoryId = cat._id;
+    }
+
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { category: categoryId },
+      { new: true, runValidators: true }
+    ).populate('category', 'name nameAr icon slug');
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Produit non trouvé' });
+    }
+
+    res.status(200).json({ success: true, message: 'Catégorie mise à jour', product });
   } catch (error) {
     next(error);
   }
