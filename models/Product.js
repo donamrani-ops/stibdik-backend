@@ -70,6 +70,13 @@ const productSchema = new mongoose.Schema({
     ref: 'Category',
     required: [true, 'La catégorie est requise']
   },
+
+  // Sous-catégorie (slug texte, ex: 'electronique-smartphones')
+  subCategory: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   
   // Vendor
   vendor: {
@@ -205,6 +212,7 @@ const productSchema = new mongoose.Schema({
 
 productSchema.index({ vendor: 1, status: 1 });
 productSchema.index({ category: 1, status: 1 });
+productSchema.index({ subCategory: 1 });
 productSchema.index({ city: 1 });
 productSchema.index({ price: 1 });
 productSchema.index({ createdAt: -1 });
