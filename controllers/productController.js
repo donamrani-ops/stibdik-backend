@@ -208,7 +208,7 @@ exports.updateProduct = async (req, res, next) => {
 // Update product category — Admin uniquement (via PATCH /:id/category)
 exports.updateProductCategory = async (req, res, next) => {
   try {
-    const { category } = req.body;
+    const { category, subCategory = '' } = req.body;
 
     if (!category) {
       return res.status(400).json({ success: false, message: 'Catégorie requise' });
@@ -227,7 +227,7 @@ exports.updateProductCategory = async (req, res, next) => {
 
     const product = await Product.findByIdAndUpdate(
       req.params.id,
-      { category: categoryId },
+      { category: categoryId, subCategory: subCategory || '' },
       { new: true, runValidators: true }
     ).populate('category', 'name nameAr icon slug');
 
@@ -235,7 +235,7 @@ exports.updateProductCategory = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Produit non trouvé' });
     }
 
-    res.status(200).json({ success: true, message: 'Catégorie mise à jour', product });
+    res.status(200).json({ success: true, message: 'Catégorie et sous-catégorie mises à jour', product });
   } catch (error) {
     next(error);
   }
