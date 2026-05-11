@@ -33,6 +33,11 @@ exports.getAllProducts = async (req, res, next) => {
       filter.vendor = seller;
     }
 
+    // Filtre sous-catégorie (slug texte)
+    if (req.query.subCategory) {
+      filter.subCategory = req.query.subCategory;
+    }
+
     // Filtre catégorie — accepte un _id MongoDB OU un slug texte
     if (category) {
       const mongoose = require('mongoose');
@@ -167,7 +172,7 @@ exports.updateProduct = async (req, res, next) => {
     const VENDOR_ALLOWED_FIELDS = [
       'nameFr', 'nameAr', 'descFr', 'descAr', 'price', 'original',
       'images', 'stock', 'condition', 'conditionAr', 'sizes', 'colors',
-      'city', 'type', 'variants', 'metaKeywords', 'expiresAt',
+      'city', 'type', 'variants', 'metaKeywords', 'expiresAt', 'subCategory',
     ];
 
     // Champs réservés à l'admin uniquement
