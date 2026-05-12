@@ -10,7 +10,7 @@ const orderSchema = new mongoose.Schema({
   orderNumber: {
     type: String,
     unique: true,
-    required: true
+    sparse: true  // Permet null temporairement pendant le pre-save
   },
   
   // Relations
