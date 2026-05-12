@@ -10,7 +10,7 @@ const orderSchema = new mongoose.Schema({
   orderNumber: {
     type: String,
     unique: true,
-    required: false
+    required: true
   },
   
   // Relations
@@ -135,6 +135,13 @@ const orderSchema = new mongoose.Schema({
   platformFeePercent: {
     type: Number,
     default: 5 // 5% par défaut
+  },
+
+  // Référence à l'avis laissé (null = pas encore reviewé)
+  reviewId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Review',
+    default: null
   }
   
 }, {
