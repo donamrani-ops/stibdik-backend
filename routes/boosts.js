@@ -11,21 +11,23 @@ const trackLimiter = rateLimit({
   message: { success: false, message: 'Trop de requêtes de tracking' }
 });
 
-// ── Public ────────────────────────────────────────────────────────────────────
+// ── Public (avant protect) ────────────────────────────────────────────────────
 router.get('/plans', bc.getPlans);
 
-// ── Authentifié ───────────────────────────────────────────────────────────────
+// ── Toutes les routes suivantes nécessitent un token ─────────────────────────
 router.use(protect);
-router.patch('/:id/track', trackLimiter, bc.trackEvent);
 
-// ── Vendor ────────────────────────────────────────────────────────────────────
-router.post('/request', authorize('vendor', 'admin'), bc.requestBoost);
-router.get('/my',       authorize('vendor', 'admin'), bc.getMyBoosts);
+// ── Routes spécifiques (DOIVENT être avant /:id pour éviter les conflits) ────
 router.get('/my/stats', authorize('vendor', 'admin'), bc.getMyStats);
-router.patch('/:id/cancel', bc.cancelBoost);
+router.get('/my',       authorize('vendor', 'admin'), bc.getMyBoosts);
+router.post('/request', authorize('vendor', 'admin'), bc.requestBoost);
 
-// ── Admin ─────────────────────────────────────────────────────────────────────
-router.get('/admin/all',        authorize('admin'), bc.adminGetAll);
-router.patch('/:id/activate',   authorize('admin'), bc.adminActivate);
+// Admin — routes fixes avant les routes paramétrées /:id
+router.get('/admin/all', authorize('admin'), bc.adminGetAll);
+
+// ── Routes paramétrées /:id (en dernier pour éviter de capturer les routes fixes)
+router.patch('/:id/activate', authorize('admin'), bc.adminActivate);
+router.patch('/:id/cancel',   bc.cancelBoost);
+router.patch('/:id/track',    trackLimiter, bc.trackEvent);
 
 module.exports = router;
