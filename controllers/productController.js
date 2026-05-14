@@ -1,123 +1,84 @@
 const Product = require('../models/Product');
 const Category = require('../models/Category');
+const Boost   = require('../models/Boost');
+
+// ─── Helper : enrichir les produits avec boostRank ───────────────────────────
+// On récupère les boosts actifs et on ajoute boostRank + isBoosted aux produits
+async function enrichWithBoostRank(products) {
+  if (!products || products.length === 0) return products;
+
+  // Récupérer les boosts actifs pour les produits et les vendors de cette liste
+  const vendorIds  = [...new Set(products.map(p => p.vendor?._id || p.vendor).filter(Boolean).map(String))];
+  const productIds = products.map(p => p._id).filter(Boolean);
+
+  const activeBoosts = await Boost.find({
+    status: 'active',
+    expiresAt: { $gt: new Date() },
+    $or: [
+      { product: { $in: productIds } },
+      { vendor: { $in: vendorIds }, targetType: 'profile' }
+    ]
+  }).lean();
+
+  // Map pour lookup rapide
+  const productBoostMap = {};
+  const vendorBoostMap  = {};
+  activeBoosts.forEach(b => {
+    if (b.product) productBoostMap[String(b.product)] = b;
+    else if (b.vendor) {
+      const vid = String(b.vendor);
+      if (!vendorBoostMap[vid] || b.planSnapshot.rankBonus > vendorBoostMap[vid].planSnapshot.rankBonus) {
+        vendorBoostMap[vid] = b;
+      }
+    }
+  });
+
+  return products.map(p => {
+    const pid = String(p._id);
+    const vid = String(p.vendor?._id || p.vendor || '');
+    const productBoost = productBoostMap[pid];
+    const vendorBoost  = vendorBoostMap[vid];
+    const boost        = productBoost || vendorBoost || null;
+
+    const boostBonus = boost ? (boost.planSnapshot?.rankBonus || 0) : 0;
+    const rating     = p.stats?.avgRating || p.rating || 0;
+    const sales      = p.stats?.sales || p.sold || 0;
+    const views      = p.views || p.stats?.views || 0;
+    const freshness  = Math.max(0, 30 - Math.floor((Date.now() - new Date(p.createdAt)) / (1000 * 60 * 60 * 24)));
+
+    const rankingScore = boostBonus + (rating * 10) + (sales * 2) + (views * 0.1) + freshness;
+
+    const pObj = p.toObject ? p.toObject() : { ...p };
+    return {
+      ...pObj,
+      isBoosted:    !!boost,
+      boostId:      boost?._id || null,
+      boostPlan:    boost?.planSnapshot?.name || null,
+      rankingScore: Math.round(rankingScore)
+    };
+  }).sort((a, b) => b.rankingScore - a.rankingScore);
+}
 
 // Get all products with filters
 exports.getAllProducts = async (req, res, next) => {
   try {
-    const {
-      page = 1,
-      limit = 20,
-      category,
-      city,
-      minPrice,
-      maxPrice,
-      type,
-      sort = '-createdAt',
-      query,
-      status,
-      seller,
-    } = req.query;
+    const { page = 1, limit = 20, category, city, minPrice, maxPrice, type, sort = '-createdAt' } = req.query;
+    
+    const products = await Product.advancedSearch({
+      category, city, minPrice, maxPrice, type, sort, page, limit
+    });
 
-    // Construire le filtre manuellement pour supporter query + status
-    const filter = {};
-
-    // Filtre statut : si fourni on l'applique, sinon on montre tous les actifs
-    if (status) {
-      filter.status = status;
-    } else {
-      filter.status = 'active';
-    }
-
-    // Filtre vendeur (utilisé par la page shop)
-    if (seller) {
-      filter.vendor = seller;
-    }
-
-    // Filtre sous-catégorie (slug texte)
-    if (req.query.subCategory) {
-      filter.subCategory = req.query.subCategory;
-    }
-
-    // Filtre catégorie — accepte un _id MongoDB OU un slug texte
-    if (category) {
-      const mongoose = require('mongoose');
-      if (mongoose.Types.ObjectId.isValid(category)) {
-        // C'est un _id MongoDB valide → on l'utilise directement
-        filter.category = category;
-      } else {
-        // C'est un slug (ex: "electronique") → on résout vers l'_id
-        const cat = await Category.findOne({ slug: category, active: true }).select('_id');
-        if (cat) {
-          filter.category = cat._id;
-        } else {
-          // Slug inconnu → aucun résultat
-          return res.status(200).json({ success: true, count: 0, total: 0, page: 1, pages: 0, products: [] });
-        }
-      }
-    }
-
-    // Filtre type
-    if (type) {
-      filter.type = type;
-    }
-
-    // Filtre ville (partiel, insensible à la casse)
-    if (city) {
-      filter.city = new RegExp(city.trim(), 'i');
-    }
-
-    // Filtre prix
-    if (minPrice || maxPrice) {
-      filter.price = {};
-      if (minPrice) filter.price.$gte = parseFloat(minPrice);
-      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
-    }
-
-    // Recherche texte libre — le paramètre "query"
-    if (query && query.trim()) {
-      const rx = new RegExp(query.trim(), 'i');
-      filter.$or = [
-        { nameFr: rx },
-        { nameAr: rx },
-        { descFr: rx },
-        { descAr: rx },
-        { brand: rx },
-        { city: rx },
-        { vendorName: rx },
-      ];
-    }
-
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
-    const skip = (pageNum - 1) * limitNum;
-
-    // Tri
-    const sortMap = {
-      '-createdAt': { createdAt: -1 },
-      'createdAt':  { createdAt: 1 },
-      '-price':     { price: -1 },
-      'price':      { price: 1 },
-      '-views':     { views: -1 },
-    };
-    const sortObj = sortMap[sort] || { createdAt: -1 };
-
-    const [products, total] = await Promise.all([
-      Product.find(filter)
-        .sort(sortObj)
-        .skip(skip)
-        .limit(limitNum)
-        .populate('vendor', 'name shopName shopLogo phone email')
-        .populate('category', 'name nameAr icon'),
-      Product.countDocuments(filter),
-    ]);
+    // Enrichir avec le ranking boost
+    const enriched = await enrichWithBoostRank(products);
+    const total = await Product.countDocuments({ status: 'active' });
 
     res.status(200).json({
       success: true,
-      count: products.length,
+      count: enriched.length,
       total,
-      page: pageNum,
-      pages: Math.ceil(total / limitNum),
-      products,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+      products: enriched
     });
   } catch (error) {
     next(error);
@@ -128,7 +89,7 @@ exports.getAllProducts = async (req, res, next) => {
 exports.getProduct = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id)
-      .populate('vendor', 'name shopName shopLogo phone email')
+      .populate('vendor', 'name shopName shopLogo')
       .populate('category', 'name nameAr icon');
 
     if (!product) {
@@ -164,78 +125,14 @@ exports.updateProduct = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Produit non trouvé' });
     }
 
+    // Check ownership
     if (product.vendor.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Non autorisé' });
     }
 
-    // Champs que le vendor peut modifier
-    const VENDOR_ALLOWED_FIELDS = [
-      'nameFr', 'nameAr', 'descFr', 'descAr', 'price', 'original',
-      'images', 'stock', 'condition', 'conditionAr', 'sizes', 'colors',
-      'city', 'type', 'variants', 'metaKeywords', 'expiresAt', 'subCategory',
-    ];
-
-    // Champs réservés à l'admin uniquement
-    const ADMIN_ONLY_FIELDS = ['category', 'status', 'vendor', 'vendorName', 'badge', 'featured'];
-
-    let updateData;
-    if (req.user.role === 'admin') {
-      // Admin peut tout modifier sauf _id
-      const { _id, __v, createdAt, ...rest } = req.body;
-      updateData = rest;
-    } else {
-      // Vendor : whitelist stricte + refus des champs admin
-      const forbidden = Object.keys(req.body).filter(k => ADMIN_ONLY_FIELDS.includes(k));
-      if (forbidden.length > 0) {
-        return res.status(403).json({
-          success: false,
-          message: `Champs non autorisés : ${forbidden.join(', ')}`,
-        });
-      }
-      updateData = Object.fromEntries(
-        Object.entries(req.body).filter(([k]) => VENDOR_ALLOWED_FIELDS.includes(k))
-      );
-    }
-
-    product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
+    product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
 
     res.status(200).json({ success: true, message: 'Produit mis à jour', product });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Update product category — Admin uniquement (via PATCH /:id/category)
-exports.updateProductCategory = async (req, res, next) => {
-  try {
-    const { category, subCategory = '' } = req.body;
-
-    if (!category) {
-      return res.status(400).json({ success: false, message: 'Catégorie requise' });
-    }
-
-    // Résoudre slug → ObjectId si nécessaire
-    const mongoose = require('mongoose');
-    let categoryId = category;
-    if (!mongoose.Types.ObjectId.isValid(category)) {
-      const cat = await Category.findOne({ slug: category, active: true }).select('_id');
-      if (!cat) {
-        return res.status(404).json({ success: false, message: 'Catégorie introuvable' });
-      }
-      categoryId = cat._id;
-    }
-
-    const product = await Product.findByIdAndUpdate(
-      req.params.id,
-      { category: categoryId, subCategory: subCategory || '' },
-      { new: true, runValidators: true }
-    ).populate('category', 'name nameAr icon slug');
-
-    if (!product) {
-      return res.status(404).json({ success: false, message: 'Produit non trouvé' });
-    }
-
-    res.status(200).json({ success: true, message: 'Catégorie et sous-catégorie mises à jour', product });
   } catch (error) {
     next(error);
   }
