@@ -130,3 +130,23 @@ exports.getTrending = async (req, res, next) => {
     res.status(200).json({ success: true, products });
   } catch (error) { next(error); }
 };
+// Update product category (Admin only)
+exports.updateProductCategory = async (req, res, next) => {
+  try {
+    const { category } = req.body;
+    if (!category) {
+      return res.status(400).json({ success: false, message: 'Category is required' });
+    }
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { category },
+      { new: true, runValidators: true }
+    );
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Produit non trouvé' });
+    }
+    res.status(200).json({ success: true, message: 'Catégorie mise à jour', product });
+  } catch (error) {
+    next(error);
+  }
+};
