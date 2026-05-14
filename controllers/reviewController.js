@@ -252,6 +252,7 @@ exports.getVendorReviews = async (req, res, next) => {
 
     const mapped = reviews.map(r => ({
       ...r,
+      vendorId: vendorId, // Ajouter explicitement pour comparaison frontend
       likeCount: r.likes?.length || 0,
       likes: undefined,
       reports: undefined
