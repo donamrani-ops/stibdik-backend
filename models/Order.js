@@ -1,19 +1,12 @@
-// ═══════════════════════════════════════════════════════════
-//  MODEL: ORDER
-//  Gestion des commandes avec statuts et paiements
-// ═══════════════════════════════════════════════════════════
-
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
-  // Référence unique
   orderNumber: {
     type: String,
     unique: true,
-    sparse: true  // Permet null temporairement pendant le pre-save
+    sparse: true
   },
   
-  // Relations
   product: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Product',
@@ -47,7 +40,6 @@ const orderSchema = new mongoose.Schema({
     shopName: String
   },
   
-  // Détails commande
   quantity: {
     type: Number,
     required: true,
@@ -65,12 +57,11 @@ const orderSchema = new mongoose.Schema({
     min: 0
   },
   
-  // Livraison
   shippingAddress: {
     fullName: { type: String, required: true },
-    phone: { type: String, required: true },
-    address: { type: String, required: true },
-    city: { type: String, required: true },
+    phone:    { type: String, required: true },
+    address:  { type: String, required: true },
+    city:     { type: String, required: true },
     postalCode: String
   },
   shippingCost: {
@@ -79,7 +70,6 @@ const orderSchema = new mongoose.Schema({
     min: 0
   },
   
-  // Statut livraison
   status: {
     type: String,
     enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'],
@@ -89,13 +79,9 @@ const orderSchema = new mongoose.Schema({
     status: String,
     timestamp: { type: Date, default: Date.now },
     note: String,
-    updatedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    }
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   }],
   
-  // Paiement
   paymentMethod: {
     type: String,
     enum: ['cod', 'card', 'transfer'],
@@ -113,58 +99,53 @@ const orderSchema = new mongoose.Schema({
     refundReason: String
   },
   
-  // Dates importantes
   estimatedDelivery: Date,
   deliveredAt: Date,
   cancelledAt: Date,
   cancellationReason: String,
-  
-  // Notes
   notes: String,
   internalNotes: String,
-  
-  // Tracking
   trackingNumber: String,
   carrier: String,
   
-  // Commission plateforme
   platformFee: {
     type: Number,
     default: 0
   },
   platformFeePercent: {
     type: Number,
-    default: 5 // 5% par défaut
+    default: 5
   },
 
-  // Référence à l'avis laissé (null = pas encore reviewé)
   reviewId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Review',
     default: null
-  }
-  
+  },
+
+  // ── Coupon appliqué ─────────────────────────────────────
+  coupon: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Coupon',
+    default: null
+  },
+  couponCode:     { type: String, default: null },
+  discountAmount: { type: Number, default: 0 }
+
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
+  toJSON:   { virtuals: true },
   toObject: { virtuals: true }
 });
 
-// ═══════════════════════════════════════════════════════════
-//  INDEXES
-// ═══════════════════════════════════════════════════════════
-
+// ── Indexes ──────────────────────────────────────────────
 orderSchema.index({ orderNumber: 1 });
 orderSchema.index({ buyer: 1, createdAt: -1 });
 orderSchema.index({ vendor: 1, status: 1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ paymentStatus: 1 });
 
-// ═══════════════════════════════════════════════════════════
-//  MIDDLEWARE
-// ═══════════════════════════════════════════════════════════
-
-// Générer numéro de commande avant save
+// ── Pre-save hooks ───────────────────────────────────────
 orderSchema.pre('save', async function(next) {
   if (this.isNew) {
     const count = await this.constructor.countDocuments();
@@ -173,7 +154,6 @@ orderSchema.pre('save', async function(next) {
   next();
 });
 
-// Calculer commission plateforme
 orderSchema.pre('save', function(next) {
   if (this.isModified('totalAmount') || this.isModified('platformFeePercent')) {
     this.platformFee = (this.totalAmount * this.platformFeePercent) / 100;
@@ -181,186 +161,95 @@ orderSchema.pre('save', function(next) {
   next();
 });
 
-// Ajouter au statusHistory quand status change
 orderSchema.pre('save', function(next) {
   if (this.isModified('status') && !this.isNew) {
-    this.statusHistory.push({
-      status: this.status,
-      timestamp: new Date()
-    });
+    this.statusHistory.push({ status: this.status, timestamp: new Date() });
   }
   next();
 });
 
-// Mettre à jour stats vendor après création
 orderSchema.post('save', async function(doc) {
   if (doc.isNew) {
     const User = mongoose.model('User');
     await User.findByIdAndUpdate(doc.vendor, {
-      $inc: { 
-        'stats.totalOrders': 1,
-        'stats.totalRevenue': doc.totalAmount - doc.platformFee
-      }
+      $inc: { 'stats.totalOrders': 1, 'stats.totalRevenue': doc.totalAmount - doc.platformFee }
     });
   }
 });
 
-// ═══════════════════════════════════════════════════════════
-//  MÉTHODES D'INSTANCE
-// ═══════════════════════════════════════════════════════════
-
-// Confirmer la commande
+// ── Méthodes d'instance ──────────────────────────────────
 orderSchema.methods.confirm = async function() {
   this.status = 'confirmed';
-  this.statusHistory.push({
-    status: 'confirmed',
-    timestamp: new Date(),
-    note: 'Commande confirmée par le vendeur'
-  });
+  this.statusHistory.push({ status: 'confirmed', timestamp: new Date(), note: 'Commande confirmée par le vendeur' });
   await this.save();
 };
 
-// Marquer comme expédiée
 orderSchema.methods.markAsShipped = async function(trackingNumber, carrier) {
   this.status = 'shipped';
   this.trackingNumber = trackingNumber;
   this.carrier = carrier;
-  this.statusHistory.push({
-    status: 'shipped',
-    timestamp: new Date(),
-    note: `Expédiée via ${carrier}`
-  });
+  this.statusHistory.push({ status: 'shipped', timestamp: new Date(), note: `Expédiée via ${carrier}` });
   await this.save();
 };
 
-// Marquer comme livrée
 orderSchema.methods.markAsDelivered = async function() {
   this.status = 'delivered';
   this.deliveredAt = new Date();
-  this.paymentStatus = 'paid'; // Si COD
+  this.paymentStatus = 'paid';
   this.paymentDetails.paidAt = new Date();
-  this.statusHistory.push({
-    status: 'delivered',
-    timestamp: new Date(),
-    note: 'Commande livrée avec succès'
-  });
+  this.statusHistory.push({ status: 'delivered', timestamp: new Date(), note: 'Commande livrée avec succès' });
   await this.save();
 };
 
-// Annuler la commande
 orderSchema.methods.cancel = async function(reason) {
   this.status = 'cancelled';
   this.cancelledAt = new Date();
   this.cancellationReason = reason;
-  this.statusHistory.push({
-    status: 'cancelled',
-    timestamp: new Date(),
-    note: reason
-  });
+  this.statusHistory.push({ status: 'cancelled', timestamp: new Date(), note: reason });
   await this.save();
 };
 
-// Calculer le montant net pour le vendeur
-orderSchema.methods.getVendorAmount = function() {
-  return this.totalAmount - this.platformFee;
-};
+orderSchema.methods.getVendorAmount = function() { return this.totalAmount - this.platformFee; };
+orderSchema.methods.isEditable     = function() { return ['pending', 'confirmed'].includes(this.status); };
+orderSchema.methods.isCancellable  = function() { return ['pending', 'confirmed', 'processing'].includes(this.status); };
 
-// Vérifier si modifiable
-orderSchema.methods.isEditable = function() {
-  return ['pending', 'confirmed'].includes(this.status);
-};
-
-// Vérifier si annulable
-orderSchema.methods.isCancellable = function() {
-  return ['pending', 'confirmed', 'processing'].includes(this.status);
-};
-
-// ═══════════════════════════════════════════════════════════
-//  MÉTHODES STATIQUES
-// ═══════════════════════════════════════════════════════════
-
-// Statistiques vendeur
+// ── Méthodes statiques ───────────────────────────────────
 orderSchema.statics.getVendorStats = async function(vendorId, startDate, endDate) {
   const match = { vendor: vendorId };
   if (startDate || endDate) {
     match.createdAt = {};
     if (startDate) match.createdAt.$gte = new Date(startDate);
-    if (endDate) match.createdAt.$lte = new Date(endDate);
+    if (endDate)   match.createdAt.$lte = new Date(endDate);
   }
-
-  const stats = await this.aggregate([
+  return this.aggregate([
     { $match: match },
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 },
-        totalRevenue: { $sum: { $subtract: ['$totalAmount', '$platformFee'] } }
-      }
-    }
+    { $group: { _id: '$status', count: { $sum: 1 }, totalRevenue: { $sum: { $subtract: ['$totalAmount', '$platformFee'] } } } }
   ]);
-
-  return stats;
 };
 
-// Commandes récentes
 orderSchema.statics.getRecent = function(limit = 10) {
   return this.find()
-    .populate('buyer', 'name email')
-    .populate('vendor', 'name shopName')
+    .populate('buyer',   'name email')
+    .populate('vendor',  'name shopName')
     .populate('product', 'nameFr images')
-    .sort('-createdAt')
-    .limit(limit);
+    .sort('-createdAt').limit(limit);
 };
 
-// Rapport global
 orderSchema.statics.getGlobalReport = async function(period = 'month') {
   const date = new Date();
   let startDate;
-  
   switch(period) {
-    case 'day':
-      startDate = new Date(date.setHours(0, 0, 0, 0));
-      break;
-    case 'week':
-      startDate = new Date(date.setDate(date.getDate() - 7));
-      break;
-    case 'month':
-      startDate = new Date(date.setMonth(date.getMonth() - 1));
-      break;
-    case 'year':
-      startDate = new Date(date.setFullYear(date.getFullYear() - 1));
-      break;
-    default:
-      startDate = new Date(0);
+    case 'day':   startDate = new Date(date.setHours(0,0,0,0)); break;
+    case 'week':  startDate = new Date(date.setDate(date.getDate()-7)); break;
+    case 'month': startDate = new Date(date.setMonth(date.getMonth()-1)); break;
+    case 'year':  startDate = new Date(date.setFullYear(date.getFullYear()-1)); break;
+    default:      startDate = new Date(0);
   }
-
   const report = await this.aggregate([
     { $match: { createdAt: { $gte: startDate } } },
-    {
-      $group: {
-        _id: null,
-        totalOrders: { $sum: 1 },
-        totalRevenue: { $sum: '$totalAmount' },
-        totalPlatformFees: { $sum: '$platformFee' },
-        averageOrderValue: { $avg: '$totalAmount' },
-        byStatus: {
-          $push: {
-            status: '$status',
-            amount: '$totalAmount'
-          }
-        }
-      }
-    }
+    { $group: { _id: null, totalOrders: { $sum: 1 }, totalRevenue: { $sum: '$totalAmount' }, totalPlatformFees: { $sum: '$platformFee' }, averageOrderValue: { $avg: '$totalAmount' }, byStatus: { $push: { status: '$status', amount: '$totalAmount' } } } }
   ]);
-
-  return report[0] || {
-    totalOrders: 0,
-    totalRevenue: 0,
-    totalPlatformFees: 0,
-    averageOrderValue: 0
-  };
+  return report[0] || { totalOrders: 0, totalRevenue: 0, totalPlatformFees: 0, averageOrderValue: 0 };
 };
 
-const Order = mongoose.model('Order', orderSchema);
-
-module.exports = Order;
+module.exports = mongoose.model('Order', orderSchema);
