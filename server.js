@@ -24,6 +24,8 @@ const uploadRoutes = require('./routes/upload');
 const paymentRoutes = require('./routes/payment');
 const quoteRoutes = require('./routes/quotes');
 const boostRoutes  = require('./routes/boosts');
+const wishlistRoutes = require('./routes/wishlist');
+const reviewRoutes   = require('./routes/reviews');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -151,7 +153,8 @@ app.use('/api/boosts',  boostRoutes);
 
 // Route non trouvée
 app.use(notFound);
-
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/reviews',  reviewRoutes);
 // Error handler (doit être en dernier)
 app.use(errorHandler);
 
