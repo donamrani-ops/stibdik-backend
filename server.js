@@ -141,21 +141,23 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/payment', paymentRoutes);
-app.use('/api/quotes',  quoteRoutes);
-app.use('/api/boosts',  boostRoutes);
+// API Routes
+app.use('/api/auth',      authRoutes);
+app.use('/api/users',     userRoutes);
+app.use('/api/products',  productRoutes);
+app.use('/api/categories',categoryRoutes);
+app.use('/api/orders',    orderRoutes);
+app.use('/api/upload',    uploadRoutes);
+app.use('/api/payment',   paymentRoutes);
+app.use('/api/quotes',    quoteRoutes);
+app.use('/api/boosts',    boostRoutes);
+app.use('/api/wishlist',  wishlistRoutes);
+app.use('/api/reviews',   reviewRoutes);
 
-// Route non trouvée
+// Route non trouvée (DOIT être en dernier)
 app.use(notFound);
-app.use('/api/wishlist', wishlistRoutes);
-app.use('/api/reviews',  reviewRoutes);
-// Error handler (doit être en dernier)
+
+// Error handler (DOIT être en tout dernier)
 app.use(errorHandler);
 
 // ═══════════════════════════════════════════════════════════
