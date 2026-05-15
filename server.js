@@ -13,6 +13,7 @@ const compression = require('compression');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const rateLimit = require('express-rate-limit');
+const couponRoutes = require('./routes/coupons');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -153,6 +154,7 @@ app.use('/api/quotes',    quoteRoutes);
 app.use('/api/boosts',    boostRoutes);
 app.use('/api/wishlist',  wishlistRoutes);
 app.use('/api/reviews',   reviewRoutes);
+app.use('/api/coupons', couponRoutes);
 
 // Route non trouvée (DOIT être en dernier)
 app.use(notFound);
