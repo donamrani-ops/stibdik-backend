@@ -1,4 +1,4 @@
-// Model: CouponUsage (Journal des utilisations de coupons)
+// Model: CouponUsage — journal de chaque utilisation
 const mongoose = require('mongoose');
 
 const couponUsageSchema = new mongoose.Schema({
@@ -6,11 +6,10 @@ const couponUsageSchema = new mongoose.Schema({
   user:          { type: mongoose.Schema.Types.ObjectId, ref: 'User',   required: true, index: true },
   order:         { type: mongoose.Schema.Types.ObjectId, ref: 'Order',  required: true },
   discountAmount:{ type: Number, required: true },
-  cartAmount:    { type: Number, required: true },
-  usedAt:        { type: Date, default: Date.now }
-}, { timestamps: false });
+  cartTotal:     { type: Number, required: true },
+  finalTotal:    { type: Number, required: true }
+}, { timestamps: true });
 
-// Un user ne peut pas utiliser le même coupon sur la même commande deux fois
-couponUsageSchema.index({ coupon: 1, order: 1 }, { unique: true });
+couponUsageSchema.index({ coupon: 1, user: 1 });
 
 module.exports = mongoose.model('CouponUsage', couponUsageSchema);
