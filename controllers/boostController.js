@@ -43,8 +43,7 @@ exports.requestBoost = async (req, res, next) => {
       // Vérifier qu'il n'y a pas déjà un boost actif ou en attente sur ce produit
       const existing = await Boost.findOne({
         product: productId,
-        status: { $in: ['pending', 'active'] },
-        ...(status === 'active' ? { expiresAt: { $gt: new Date() } } : {})
+        status: { $in: ['pending', 'active'] }
       });
       if (existing) {
         return res.status(409).json({ success: false, message: 'Ce produit a déjà un boost actif ou en attente de validation' });
