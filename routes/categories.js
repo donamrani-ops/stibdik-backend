@@ -1,18 +1,26 @@
 // Routes: Categories
 const express = require('express');
-const router = express.Router();
-const categoryController = require('../controllers/categoryController');
+const router  = express.Router();
+const cc      = require('../controllers/categoryController');
 const { protect, authorize } = require('../middleware/auth');
 
-// Public routes
-router.get('/', categoryController.getAllCategories);
-router.get('/tree', categoryController.getCategoryTree);
-router.get('/featured', categoryController.getFeatured);
-router.get('/:slug', categoryController.getCategoryBySlug);
+// ── Routes fixes (AVANT /:slug et /:id) ─────────────────────────────────────
+router.get('/tree',     cc.getCategoryTree);
+router.get('/featured', cc.getFeatured);
+router.get('/main',     cc.getMainCategories);
 
-// Admin only
-router.post('/', protect, authorize('admin'), categoryController.createCategory);
-router.put('/:id', protect, authorize('admin'), categoryController.updateCategory);
-router.delete('/:id', protect, authorize('admin'), categoryController.deleteCategory);
+// ── Route principale ─────────────────────────────────────────────────────────
+router.get('/', cc.getAllCategories);
+
+// ── Routes paramétrées ───────────────────────────────────────────────────────
+router.get('/:id/children', cc.getChildren);
+router.get('/:slug',        cc.getCategoryBySlug);
+
+// ── Admin ────────────────────────────────────────────────────────────────────
+router.post('/',                  protect, authorize('admin'), cc.createCategory);
+router.put('/:id',                protect, authorize('admin'), cc.updateCategory);
+router.patch('/:id/order',        protect, authorize('admin'), cc.updateOrder);
+router.patch('/:id/toggle',       protect, authorize('admin'), cc.toggleActive);
+router.delete('/:id',             protect, authorize('admin'), cc.deleteCategory);
 
 module.exports = router;
