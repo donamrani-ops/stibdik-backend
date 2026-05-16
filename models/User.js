@@ -28,9 +28,11 @@ const userSchema = new mongoose.Schema({
     trim: true,
     validate: {
       validator: function(v) {
-        return !v || /^(\+212|0)[5-7]\d{8}$/.test(v.replace(/\s/g, ''));
+        if (!v || v.trim() === '') return true; // optionnel
+        const cleaned = v.replace(/[\s\-\.]/g, '');
+        return /^(?:\+212|00212|0)([67]\d{8})$/.test(cleaned);
       },
-      message: 'Numéro de téléphone marocain invalide'
+      message: 'Numéro invalide. Formats acceptés : 06XXXXXXXX, 07XXXXXXXX, +2126XXXXXXXX, +2127XXXXXXXX'
     }
   },
   password: {
@@ -66,17 +68,6 @@ const userSchema = new mongoose.Schema({
   shopLogo: {
     type: String, // URL Cloudinary
     default: null
-  },
-
-  // Wishlist : liste de produits favoris (références ObjectId vers Product)
-  // Stockée directement sur le user pour récupération rapide en 1 seul .populate()
-  // L'index permet des queries efficaces "est-ce que ce produit est dans la wishlist d'un user ?"
-  wishlist: {
-    type: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Product'
-    }],
-    default: []
   },
   
   // Vérifications
@@ -181,15 +172,11 @@ userSchema.methods.getPublicProfile = function() {
     id: this._id,
     name: this.name,
     email: this.email,
-    phone: this.phone,
     role: this.role,
     avatar: this.avatar || this.getInitials(),
     shopName: this.shopName,
     shopDescription: this.shopDescription,
     shopLogo: this.shopLogo,
-    addresses: this.addresses,
-    status: this.status,
-    isVerified: this.isVerified,
     stats: this.role === 'vendor' ? this.stats : undefined,
     createdAt: this.createdAt
   };
@@ -256,6 +243,17 @@ userSchema.virtual('products', {
   foreignField: 'vendor',
   count: true
 });
+
+// Normaliser le numéro de téléphone avant save
+userSchema.pre('save', function(next) {
+  if (this.isModified('phone') && this.phone) {
+    const cleaned = this.phone.replace(/[\s\-\.]/g, '');
+    const match = cleaned.match(/^(?:\+212|00212|0)([67]\d{8})$/);
+    if (match) this.phone = '0' + match[1]; // → 0XXXXXXXXX
+  }
+  next();
+});
+
 
 const User = mongoose.model('User', userSchema);
 
