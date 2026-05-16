@@ -64,6 +64,7 @@ exports.getAllProducts = async (req, res, next) => {
       minPrice,
       maxPrice,
       type,
+      vendor,          // filtre par vendeur (ObjectId) — utilisé par VendorShop
       sort = '-createdAt'
     } = req.query;
 
@@ -89,12 +90,13 @@ exports.getAllProducts = async (req, res, next) => {
     const effectiveCategoryId = subCategoryId || categoryId;
 
     const products = await Product.advancedSearch({
-      query,           // ← FIX 1 : passer le mot-clé
+      query,
       category: effectiveCategoryId,
       city,
       minPrice,
       maxPrice,
       type,
+      vendor,          // filtre boutique vendeur
       sort,
       page,
       limit
@@ -104,6 +106,7 @@ exports.getAllProducts = async (req, res, next) => {
     const countFilter = { status: 'active' };
     if (effectiveCategoryId) countFilter.category = effectiveCategoryId;
     if (query) countFilter.$text = { $search: query };
+    if (vendor) countFilter.vendor = vendor;
 
     const total = await Product.countDocuments(countFilter);
 
