@@ -1,22 +1,32 @@
 // Routes: Users
 const express = require('express');
-const router = express.Router();
-const userController = require('../controllers/userController');
+const router  = express.Router();
+const uc      = require('../controllers/userController');
 const { protect, authorize } = require('../middleware/auth');
+const rateLimit = require('express-rate-limit');
 
-// All routes require authentication
+// Rate limiting sur reset password (sécurité)
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 10,
+  message: { success: false, message: 'Trop de tentatives de réinitialisation. Réessayez dans 15 min.' }
+});
+
 router.use(protect);
 
-// User profile
-router.get('/profile', userController.getProfile);
-router.put('/profile', userController.updateProfile);
+// ── Profil courant ──────────────────────────────────────────
+router.get('/profile', uc.getProfile);
+router.put('/profile', uc.updateProfile);
 
-// Admin only - CRUD complet
-router.post('/', authorize('admin'), userController.createUser);
-router.get('/', authorize('admin'), userController.getAllUsers);
-router.get('/:id', authorize('admin'), userController.getUser);
-router.put('/:id', authorize('admin'), userController.updateUser);
-router.put('/:id/status', authorize('admin'), userController.updateUserStatus);
-router.delete('/:id', authorize('admin'), userController.deleteUser);
+// ── Admin ───────────────────────────────────────────────────
+// Routes fixes avant /:id
+router.get('/', authorize('admin'), uc.getAllUsers);
+
+// Routes paramétrées
+router.get('/:id',                 authorize('admin'), uc.getUser);
+router.put('/:id/status',          authorize('admin'), uc.updateUserStatus);
+router.patch('/:id/role',          authorize('admin'), uc.updateUserRole);
+router.post('/:id/reset-password', authorize('admin'), resetLimiter, uc.adminResetPassword);
+router.delete('/:id',              authorize('admin'), uc.deleteUser);
 
 module.exports = router;
