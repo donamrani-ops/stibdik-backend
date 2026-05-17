@@ -106,7 +106,43 @@ exports.createReview = async (req, res, next) => {
       return res.status(409).json({ success: false, message: 'Vous avez déjà soumis un avis identique sur un autre produit' });
     }
 
-    // ── 8. Valider les sous-notes (optionnelles mais bornées) ─────────────────
+    // ── 8. Anti rating-bombing : max 3 reviews par semaine par user ─────────────
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const weeklyCount = await Review.countDocuments({
+      reviewer: reviewerId,
+      createdAt: { $gte: oneWeekAgo }
+    });
+    if (weeklyCount >= 3) {
+      return res.status(429).json({
+        success: false,
+        message: 'Vous avez atteint la limite de 3 avis par semaine. Réessayez dans quelques jours.'
+      });
+    }
+
+    // ── 8b. Délai minimum 2h entre 2 reviews du même user ────────────────────
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const recentReview = await Review.findOne({
+      reviewer: reviewerId,
+      createdAt: { $gte: twoHoursAgo }
+    }).sort('-createdAt');
+    if (recentReview) {
+      const waitMin = Math.ceil((recentReview.createdAt.getTime() + 2*60*60*1000 - Date.now()) / 60000);
+      return res.status(429).json({
+        success: false,
+        message: `Veuillez attendre encore ${waitMin} minute(s) avant de soumettre un nouvel avis.`
+      });
+    }
+
+    // ── 8c. Détecter le spam étoiles (note isolée sans commentaire substantiel) ──
+    // Si rating extrême (1 ou 5) + commentaire très court → suspicion
+    if ((ratingNum === 1 || ratingNum === 5) && comment.trim().length < 25) {
+      return res.status(400).json({
+        success: false,
+        message: "Pour une note extrême (1 ou 5 étoiles), veuillez ajouter un commentaire d'au moins 25 caractères pour expliquer votre expérience."
+      });
+    }
+
+    // ── 9. Valider les sous-notes (optionnelles mais bornées) ─────────────────
     const validatedSub = {};
     ['communication', 'conformity', 'delivery', 'packaging'].forEach(k => {
       if (subRatings[k] != null) {
