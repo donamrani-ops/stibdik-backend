@@ -32,6 +32,7 @@ exports.create = async (req, res, next) => {
     if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
 
     // Vérifier doublon
+    if (!user.collections) user.collections = [];
     if (user.collections.some(c => c.name === name.trim())) {
       return res.status(409).json({ success: false, message: 'Une collection avec ce nom existe déjà' });
     }
@@ -119,6 +120,7 @@ exports.sync = async (req, res, next) => {
     const user = await User.findById(req.user._id).select('collections');
     if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
 
+    if (!user.collections) user.collections = [];
     for (const [name, productIds] of Object.entries(collections)) {
       if (!name?.trim() || !Array.isArray(productIds)) continue;
       const validIds = productIds.filter(id => isValidId(id));
