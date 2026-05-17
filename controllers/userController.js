@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const AuditLog = require('../models/AuditLog');
 
 // Get current user profile
 exports.getProfile = async (req, res, next) => {
@@ -67,6 +68,8 @@ exports.updateUserStatus = async (req, res, next) => {
     }
     const user = await User.findByIdAndUpdate(req.params.id, { status }, { new: true }).select('-password');
     if (!user) return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    await AuditLog.log(req.user, status==='suspended'?'user.suspend':'user.unsuspend',
+      { type:'user', id:user._id, name:user.name+' ('+user.email+')' }, { oldStatus: status==='suspended'?'active':'suspended', newStatus: status }, req);
     res.status(200).json({ success: true, message: 'Statut mis à jour', user });
   } catch (error) { next(error); }
 };
@@ -85,6 +88,8 @@ exports.updateUserRole = async (req, res, next) => {
     }
     const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).select('-password');
     if (!user) return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    await AuditLog.log(req.user, 'user.role_change',
+      { type:'user', id:user._id, name:user.name }, { newRole: role }, req);
     res.status(200).json({ success: true, message: `Rôle changé → ${role}`, user });
   } catch (error) { next(error); }
 };
@@ -112,6 +117,8 @@ exports.adminResetPassword = async (req, res, next) => {
     if (forceChange) user.mustChangePassword = true;
     await user.save({ validateBeforeSave: false });
 
+    await AuditLog.log(req.user, 'user.reset_password',
+      { type:'user', id:user._id, name:user.name }, { forceChange }, req);
     res.status(200).json({
       success: true,
       message: 'Mot de passe réinitialisé',
@@ -136,7 +143,10 @@ exports.deleteUser = async (req, res, next) => {
     if (req.params.id === req.user._id.toString()) {
       return res.status(403).json({ success: false, message: 'Impossible de supprimer votre propre compte' });
     }
+    const deletedInfo = { name: user.name, email: user.email };
     await user.deleteOne();
+    await AuditLog.log(req.user, 'user.delete',
+      { type:'user', id:req.params.id, name:deletedInfo.name+' ('+deletedInfo.email+')' }, {}, req);
     res.status(200).json({ success: true, message: 'Utilisateur supprimé' });
   } catch (error) { next(error); }
 };
