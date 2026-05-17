@@ -205,9 +205,26 @@ exports.getTrending = async (req, res, next) => {
 // Update category (Admin)
 exports.updateProductCategory = async (req, res, next) => {
   try {
-    const { category } = req.body;
+    const { category, subCategory } = req.body;
     if (!category) return res.status(400).json({ success: false, message: 'Category is required' });
-    const product = await Product.findByIdAndUpdate(req.params.id, { category }, { new: true, runValidators: true });
+
+    // Résoudre slug → ObjectId si nécessaire
+    let categoryId = category;
+    if (category && !category.match(/^[0-9a-fA-F]{24}$/)) {
+      const cat = await Category.findOne({ slug: category });
+      if (!cat) return res.status(404).json({ success: false, message: `Catégorie "${category}" introuvable` });
+      categoryId = cat._id;
+    }
+
+    const update = { category: categoryId };
+    // Mettre à jour la sous-catégorie si fournie (stockée comme string slug)
+    if (subCategory !== undefined) update.subCategory = subCategory;
+
+    const product = await Product.findByIdAndUpdate(
+      req.params.id, update,
+      { new: true, runValidators: true }
+    ).populate('category', 'name nameAr icon slug');
+
     if (!product) return res.status(404).json({ success: false, message: 'Produit non trouvé' });
     res.status(200).json({ success: true, message: 'Catégorie mise à jour', product });
   } catch (error) { next(error); }
