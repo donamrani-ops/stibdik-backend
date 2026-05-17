@@ -115,7 +115,17 @@ const userSchema = new mongoose.Schema({
   // Métadonnées
   lastLogin: Date,
   loginCount: { type: Number, default: 0 },
-  
+
+  // Wishlist
+  wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+
+  // Collections produits
+  collections: [{
+    name:       { type: String, required: true, trim: true },
+    productIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+    createdAt:  { type: Date, default: Date.now }
+  }],
+
 }, {
   timestamps: true, // createdAt, updatedAt
   toJSON: { virtuals: true },
