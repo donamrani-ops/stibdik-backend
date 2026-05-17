@@ -14,18 +14,19 @@ const xss            = require('xss-clean');
 const rateLimit      = require('express-rate-limit');
 
 // ── Routes ───────────────────────────────────────────────
-const authRoutes     = require('./routes/auth');
-const userRoutes     = require('./routes/users');
-const productRoutes  = require('./routes/products');
-const categoryRoutes = require('./routes/categories');
-const orderRoutes    = require('./routes/orders');
-const uploadRoutes   = require('./routes/upload');
-const paymentRoutes  = require('./routes/payment');
-const quoteRoutes    = require('./routes/quotes');
-const boostRoutes    = require('./routes/boosts');
-const wishlistRoutes = require('./routes/wishlist');
-const reviewRoutes   = require('./routes/reviews');
-const couponRoutes   = require('./routes/coupons');
+const authRoutes        = require('./routes/auth');
+const userRoutes        = require('./routes/users');
+const productRoutes     = require('./routes/products');
+const categoryRoutes    = require('./routes/categories');
+const orderRoutes       = require('./routes/orders');
+const uploadRoutes      = require('./routes/upload');
+const paymentRoutes     = require('./routes/payment');
+const quoteRoutes       = require('./routes/quotes');
+const boostRoutes       = require('./routes/boosts');
+const wishlistRoutes    = require('./routes/wishlist');
+const reviewRoutes      = require('./routes/reviews');
+const couponRoutes      = require('./routes/coupons');
+const collectionsRoutes = require('./routes/collections');
 
 // ── Middleware ───────────────────────────────────────────
 const { errorHandler } = require('./middleware/errorHandler');
@@ -35,7 +36,7 @@ const { notFound }     = require('./middleware/notFound');
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
-// Trust proxy Render/Heroku (fix express-rate-limit ERR_ERL_UNEXPECTED_X_FORWARDED_FOR)
+// Trust proxy Render/Heroku
 app.set('trust proxy', 1);
 
 // ── Sécurité ─────────────────────────────────────────────
@@ -75,10 +76,10 @@ app.use(cors(corsOptions));
 
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  max:      parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
   message: 'Trop de requêtes depuis cette IP, réessayez plus tard.',
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders:   false,
 });
 app.use('/api/', limiter);
 
@@ -95,27 +96,28 @@ if (process.env.NODE_ENV === 'development') {
 // ── Health check ─────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.status(200).json({
-    status: 'success',
-    message: 'Stibdik API is running',
-    timestamp: new Date().toISOString(),
+    status:      'success',
+    message:     'Stibdik API is running',
+    timestamp:   new Date().toISOString(),
     environment: process.env.NODE_ENV,
-    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    mongodb:     mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
   });
 });
 
 // ── Routes API ───────────────────────────────────────────
-app.use('/api/auth',       authRoutes);
-app.use('/api/users',      userRoutes);
-app.use('/api/products',   productRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/orders',     orderRoutes);
-app.use('/api/upload',     uploadRoutes);
-app.use('/api/payment',    paymentRoutes);
-app.use('/api/quotes',     quoteRoutes);
-app.use('/api/boosts',     boostRoutes);
-app.use('/api/wishlist',   wishlistRoutes);
-app.use('/api/reviews',    reviewRoutes);
-app.use('/api/coupons',    couponRoutes);
+app.use('/api/auth',        authRoutes);
+app.use('/api/users',       userRoutes);
+app.use('/api/products',    productRoutes);
+app.use('/api/categories',  categoryRoutes);
+app.use('/api/orders',      orderRoutes);
+app.use('/api/upload',      uploadRoutes);
+app.use('/api/payment',     paymentRoutes);
+app.use('/api/quotes',      quoteRoutes);
+app.use('/api/boosts',      boostRoutes);
+app.use('/api/wishlist',    wishlistRoutes);
+app.use('/api/reviews',     reviewRoutes);
+app.use('/api/coupons',     couponRoutes);
+app.use('/api/collections', collectionsRoutes);
 
 // 404 + Error handler — TOUJOURS en dernier
 app.use(notFound);
@@ -125,7 +127,7 @@ app.use(errorHandler);
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
+      useNewUrlParser:    true,
       useUnifiedTopology: true,
     });
     console.log(`✅ MongoDB connecté: ${conn.connection.host}`);
