@@ -74,15 +74,18 @@ exports.getAllProducts = async (req, res, next) => {
 
     if (category && !category.match(/^[0-9a-fA-F]{24}$/)) {
       // C'est un slug, pas un ObjectId
-      const cat = await Category.findOne({ slug: category, active: true });
-      if (!cat) {
+      // Chercher par slug sans forcer active:true (plus robuste)
+      const cat = await Category.findOne({ slug: category });
+      if (cat) {
+        categoryId = cat._id;
+      } else {
+        // Slug non trouvé — retourner vide proprement
         return res.json({ success: true, count: 0, total: 0, page: 1, pages: 0, products: [] });
       }
-      categoryId = cat._id;
     }
 
     if (subCategory && !subCategory.match(/^[0-9a-fA-F]{24}$/)) {
-      const subCat = await Category.findOne({ slug: subCategory, active: true });
+      const subCat = await Category.findOne({ slug: subCategory });
       subCategoryId = subCat ? subCat._id : null;
     }
 
