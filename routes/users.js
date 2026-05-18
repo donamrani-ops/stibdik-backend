@@ -17,6 +17,7 @@ router.use(protect);
 // ── Profil courant ──────────────────────────────────────────
 router.get('/profile', uc.getProfile);
 router.put('/profile', uc.updateProfile);
+router.post('/change-password', uc.changePassword);
 
 // ── Admin ───────────────────────────────────────────────────
 // Routes fixes avant /:id
