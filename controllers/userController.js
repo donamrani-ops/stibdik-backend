@@ -150,3 +150,28 @@ exports.deleteUser = async (req, res, next) => {
     res.status(200).json({ success: true, message: 'Utilisateur supprimé' });
   } catch (error) { next(error); }
 };
+
+// Change own password (authenticated user)
+exports.changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Mot de passe actuel et nouveau requis' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Le nouveau mot de passe doit faire au moins 6 caractères' });
+    }
+    const user = await User.findById(req.user._id).select('+password');
+    if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+    user.password = hashed;
+    user.mustChangePassword = false;
+    await user.save({ validateBeforeSave: false });
+
+    res.json({ success: true, message: 'Mot de passe changé avec succès' });
+  } catch (error) { next(error); }
+};
