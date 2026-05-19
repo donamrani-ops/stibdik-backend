@@ -161,16 +161,26 @@ exports.changePassword = async (req, res, next) => {
     if (newPassword.length < 6) {
       return res.status(400).json({ success: false, message: 'Le nouveau mot de passe doit faire au moins 6 caractères' });
     }
-    const user = await User.findById(req.user._id).select('+password');
-    if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
 
-    const isMatch = await user.comparePassword(currentPassword);
+    // Récupérer le hash directement depuis MongoDB (contourne les problèmes de select)
+    const mongoose = require('mongoose');
+    const userDoc = await mongoose.connection.collection('users').findOne(
+      { _id: new mongoose.Types.ObjectId(req.user._id || req.user.id) },
+      { projection: { password: 1 } }
+    );
+    if (!userDoc) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
+    if (!userDoc.password) return res.status(500).json({ success: false, message: 'Erreur de configuration' });
+
+    // Comparer directement avec bcrypt
+    const isMatch = await bcrypt.compare(currentPassword, userDoc.password);
     if (!isMatch) return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
 
+    // Hasher et sauvegarder le nouveau mot de passe
     const hashed = await bcrypt.hash(newPassword, 12);
-    user.password = hashed;
-    user.mustChangePassword = false;
-    await user.save({ validateBeforeSave: false });
+    await mongoose.connection.collection('users').updateOne(
+      { _id: userDoc._id },
+      { $set: { password: hashed, mustChangePassword: false } }
+    );
 
     res.json({ success: true, message: 'Mot de passe changé avec succès' });
   } catch (error) { next(error); }
