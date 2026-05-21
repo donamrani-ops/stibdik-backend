@@ -27,6 +27,8 @@ const wishlistRoutes    = require('./routes/wishlist');
 const reviewRoutes      = require('./routes/reviews');
 const couponRoutes      = require('./routes/coupons');
 const collectionsRoutes = require('./routes/collections');
+const auditRoutes       = require('./routes/audit');
+const ticketRoutes      = require('./routes/tickets');
 
 // ── Middleware ───────────────────────────────────────────
 const { errorHandler } = require('./middleware/errorHandler');
@@ -118,6 +120,8 @@ app.use('/api/wishlist',    wishlistRoutes);
 app.use('/api/reviews',     reviewRoutes);
 app.use('/api/coupons',     couponRoutes);
 app.use('/api/collections', collectionsRoutes);
+app.use('/api/audit',       auditRoutes);
+app.use('/api/tickets',     ticketRoutes);
 
 // 404 + Error handler — TOUJOURS en dernier
 app.use(notFound);
