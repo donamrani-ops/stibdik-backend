@@ -1,3 +1,4 @@
+const emailService = require('../services/emailService');
 const Ticket = require('../models/Ticket');
 const AuditLog = require('../models/AuditLog');
 
@@ -25,6 +26,10 @@ exports.createTicket = async (req, res, next) => {
       lastReplyAt: new Date(),
       lastReplyBy: 'user'
     });
+    // Notifications email
+    emailService.notifyAdminNewTicket(ticket).catch(() => {});
+    emailService.confirmTicketCreated(ticket).catch(() => {});
+
     res.status(201).json({ success: true, ticket });
   } catch (err) { next(err); }
 };
@@ -66,6 +71,10 @@ exports.replyTicket = async (req, res, next) => {
     ticket.lastReplyAt = new Date();
     ticket.lastReplyBy = 'user';
     await ticket.save();
+
+    // Notifier admin
+    emailService.notifyAdminTicketReply(ticket, content.trim()).catch(() => {});
+
     res.json({ success: true, ticket });
   } catch (err) { next(err); }
 };
