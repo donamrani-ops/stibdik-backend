@@ -1,9 +1,5 @@
 const mongoose = require('mongoose');
 
-// ─── Définition des tailles par type de catégorie ────────────────────────────
-// Le frontend envoie sizes: ['S','M','L'] ou [38,39,40] selon la catégorie
-// On stocke tel quel en tableau de Mixed pour supporter les deux formats
-
 const productSchema = new mongoose.Schema({
   // ── Identification ───────────────────────────────────────────────────────
   nameFr:      { type: String, required: true, trim: true, maxlength: 200 },
@@ -24,23 +20,10 @@ const productSchema = new mongoose.Schema({
   stock:       { type: Number, default: 1, min: 0 },
 
   // ── TAILLES ──────────────────────────────────────────────────────────────
-  // Tableau mixte : ['S','M','L','XL','XXL'] pour vêtements
-  //                 [36,37,38,39,40,41,42] pour chaussures
-  // Vide [] = pas de tailles applicables (électronique, maison, etc.)
-  sizes: {
-    type: [mongoose.Schema.Types.Mixed],
-    default: [],
-    validate: {
-      validator: function(arr) {
-        if (!arr || arr.length === 0) return true;
-        // Tous strings ou tous nombres
-        const allStr = arr.every(s => typeof s === 'string');
-        const allNum = arr.every(s => typeof s === 'number');
-        return allStr || allNum;
-      },
-      message: 'sizes doit contenir uniquement des strings (S,M,L) ou des nombres (36,37,38)'
-    }
-  },
+  // Vêtements : ['S','M','L','XL','XXL']
+  // Chaussures: [36,37,38,39,40]
+  // Autres    : [] (vide)
+  sizes:       { type: [mongoose.Schema.Types.Mixed], default: [] },
 
   // ── Attributs produit ────────────────────────────────────────────────────
   condition:   { type: String, default: 'Bon état' },
@@ -49,10 +32,10 @@ const productSchema = new mongoose.Schema({
 
   // ── Images ───────────────────────────────────────────────────────────────
   images: [{
-    url:       { type: String },
-    publicId:  { type: String },
-    isMain:    { type: Boolean, default: false },
-    status:    { type: String, default: 'active' }
+    url:      { type: String },
+    publicId: { type: String },
+    isMain:   { type: Boolean, default: false },
+    status:   { type: String, default: 'active' }
   }],
 
   // ── Vendeur ──────────────────────────────────────────────────────────────
@@ -74,7 +57,7 @@ const productSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
-// ─── Index pour la recherche ─────────────────────────────────────────────────
+// ─── Index ───────────────────────────────────────────────────────────────────
 productSchema.index({ nameFr: 'text', nameAr: 'text', descFr: 'text', brand: 'text' });
 productSchema.index({ category: 1, status: 1 });
 productSchema.index({ vendor: 1, status: 1 });
@@ -82,49 +65,65 @@ productSchema.index({ price: 1 });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ views: -1 });
 
-// ─── Méthodes ────────────────────────────────────────────────────────────────
+// ─── Méthode instance ────────────────────────────────────────────────────────
 productSchema.methods.incrementViews = async function() {
   this.views = (this.views || 0) + 1;
   return this.save();
 };
 
-// Recherche avancée
+// ─── advancedSearch — retourne DIRECTEMENT un tableau (compatible productController) ──
 productSchema.statics.advancedSearch = async function(params) {
-  const { category, city, minPrice, maxPrice, type, sort = '-createdAt',
-          page = 1, limit = 20, vendor, status = 'active', query } = params;
+  const {
+    category, city, minPrice, maxPrice, type,
+    sort = '-createdAt', page = 1, limit = 20,
+    vendor, status = 'active', query
+  } = params;
 
   const filter = { status };
-  if (category)               filter.category = category;
-  if (city)                   filter.city = new RegExp(city, 'i');
-  if (minPrice || maxPrice)   filter.price = {};
-  if (minPrice)               filter.price.$gte = Number(minPrice);
-  if (maxPrice)               filter.price.$lte = Number(maxPrice);
-  if (type)                   filter.type = type;
-  if (vendor)                 filter.vendor = vendor;
-  if (query)                  filter.$text = { $search: query };
+  if (category)             filter.category = category;
+  if (city)                 filter.city = new RegExp(city, 'i');
+  if (minPrice || maxPrice) filter.price = {};
+  if (minPrice)             filter.price.$gte = Number(minPrice);
+  if (maxPrice)             filter.price.$lte = Number(maxPrice);
+  if (type)                 filter.type = type;
+  if (vendor)               filter.vendor = vendor;
+  if (query)                filter.$text = { $search: query };
 
   const sortObj = sort.startsWith('-')
     ? { [sort.slice(1)]: -1 }
     : { [sort]: 1 };
 
   const skip = (Number(page) - 1) * Number(limit);
-  const [products, total] = await Promise.all([
-    this.find(filter).sort(sortObj).skip(skip).limit(Number(limit))
-      .populate('vendor',   'name shopName shopLogo phone')
-      .populate('category', 'name nameAr slug icon')
-      .lean(),
-    this.countDocuments(filter)
-  ]);
 
-  return { products, total, page: Number(page), pages: Math.ceil(total / Number(limit)) };
+  // ⚠️ Retourne un TABLEAU directement (pas un objet {products, total})
+  // pour compatibilité avec productController.getAllProducts
+  const products = await this.find(filter)
+    .sort(sortObj)
+    .skip(skip)
+    .limit(Number(limit))
+    .populate('vendor',   'name shopName shopLogo phone')
+    .populate('category', 'name nameAr slug icon')
+    .lean();
+
+  return products;
 };
 
-// Produits similaires
+// ─── findSimilar ─────────────────────────────────────────────────────────────
 productSchema.statics.findSimilar = async function(excludeId, categoryId, limit = 4) {
   return this.find({ _id: { $ne: excludeId }, category: categoryId, status: 'active' })
     .sort('-views')
     .limit(limit)
     .populate('vendor', 'name shopName shopLogo')
+    .lean();
+};
+
+// ─── getTrending ─────────────────────────────────────────────────────────────
+productSchema.statics.getTrending = async function(limit = 10) {
+  return this.find({ status: 'active' })
+    .sort('-views -sold')
+    .limit(limit)
+    .populate('vendor',   'name shopName shopLogo')
+    .populate('category', 'name nameAr slug icon')
     .lean();
 };
 
