@@ -65,10 +65,20 @@ productSchema.index({ price: 1 });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ views: -1 });
 
-// ─── Méthode instance ────────────────────────────────────────────────────────
+// ─── Méthodes instance ───────────────────────────────────────────────────────
 productSchema.methods.incrementViews = async function() {
   this.views = (this.views || 0) + 1;
   return this.save();
+};
+
+productSchema.methods.getMainImage = function() {
+  if (!this.images || this.images.length === 0) return null;
+  return this.images.find(img => img.isMain) || this.images[0];
+};
+
+productSchema.methods.getActiveImages = function() {
+  if (!this.images) return [];
+  return this.images.filter(img => img.status !== 'deleted');
 };
 
 // ─── advancedSearch — retourne DIRECTEMENT un tableau (compatible productController) ──
