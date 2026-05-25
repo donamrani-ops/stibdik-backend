@@ -1,10 +1,10 @@
-const Order = require('../models/Order');
+const Order   = require('../models/Order');
 const Product = require('../models/Product');
 
 // Create order
 exports.createOrder = async (req, res, next) => {
   try {
-    const { product, quantity, shippingAddress, paymentMethod } = req.body;
+    const { product, quantity, shippingAddress, buyerInfo, paymentMethod } = req.body;
 
     const productDoc = await Product.findById(product);
     if (!productDoc) {
@@ -15,191 +15,162 @@ exports.createOrder = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Stock insuffisant' });
     }
 
+    // ── Image principale — extraire l'URL (getMainImage retourne un objet) ──
+    const mainImgObj = productDoc.getMainImage ? productDoc.getMainImage() : null;
+    const mainImgUrl = typeof mainImgObj === 'string'
+      ? mainImgObj
+      : (mainImgObj?.url || productDoc.images?.[0]?.url || '');
+
+    // ── buyerInfo — priorité au formulaire, fallback sur le compte user ──
+    const resolvedPhone = buyerInfo?.phone || shippingAddress?.phone || req.user.phone || '';
+    const resolvedName  = buyerInfo?.name  || shippingAddress?.fullName || req.user.name || '';
+    const resolvedCity  = buyerInfo?.city  || shippingAddress?.city || '';
+    const resolvedAddr  = buyerInfo?.address || shippingAddress?.address || '';
+
+    if (!resolvedPhone) {
+      return res.status(400).json({ success: false, message: 'Numéro de téléphone requis pour la livraison' });
+    }
+
     const order = await Order.create({
       product,
       productSnapshot: {
         nameFr: productDoc.nameFr,
         nameAr: productDoc.nameAr,
-        price: productDoc.price,
-        image: productDoc.getMainImage()
+        price:  productDoc.price,
+        image:  mainImgUrl
       },
       buyer: req.user._id,
       buyerInfo: {
-        name: req.user.name,
-        email: req.user.email,
-        phone: req.user.phone
+        name:  resolvedName,
+        email: req.user.email || '',
+        phone: resolvedPhone
       },
       vendor: productDoc.vendor,
       vendorInfo: {
-        name: productDoc.vendorName
+        name:     productDoc.vendorName,
+        shopName: productDoc.vendorName
       },
       quantity,
-      unitPrice: productDoc.price,
+      unitPrice:   productDoc.price,
       totalAmount: productDoc.price * quantity,
-      shippingAddress,
+      shippingAddress: shippingAddress || {
+        fullName: resolvedName,
+        phone:    resolvedPhone,
+        address:  resolvedAddr,
+        city:     resolvedCity,
+      },
       paymentMethod
     });
 
-    // Decrease stock
-    if (productDoc.type === 'ecommerce') {
-      productDoc.stock -= quantity;
+    // Décrémenter le stock
+    if (productDoc.type !== 'rfq') {
+      productDoc.stock = Math.max(0, productDoc.stock - quantity);
       await productDoc.save();
     }
 
     res.status(201).json({ success: true, message: 'Commande créée', order });
-  } catch (error) {
-    next(error);
-  }
+  } catch (error) { next(error); }
 };
 
-// Get my orders (customer)
+// Get my orders (buyer)
 exports.getMyOrders = async (req, res, next) => {
   try {
     const orders = await Order.find({ buyer: req.user._id })
-      .populate('product', 'nameFr images')
-      .sort('-createdAt');
-
-    res.status(200).json({ success: true, count: orders.length, orders });
-  } catch (error) {
-    next(error);
-  }
+      .sort('-createdAt')
+      .populate('product', 'nameFr nameAr images')
+      .populate('vendor',  'name shopName')
+      .lean();
+    res.status(200).json({ success: true, orders });
+  } catch (error) { next(error); }
 };
 
 // Get vendor orders
 exports.getVendorOrders = async (req, res, next) => {
   try {
     const orders = await Order.find({ vendor: req.user._id })
-      .populate('product', 'nameFr images')
-      .populate('buyer', 'name email')
-      .sort('-createdAt');
-
-    res.status(200).json({ success: true, count: orders.length, orders });
-  } catch (error) {
-    next(error);
-  }
+      .sort('-createdAt')
+      .populate('product', 'nameFr nameAr images')
+      .populate('buyer',   'name email phone')
+      .lean();
+    res.status(200).json({ success: true, orders });
+  } catch (error) { next(error); }
 };
 
-// Get all orders (Admin) — paginated + filtered
+// Get all orders (admin)
 exports.getAllOrders = async (req, res, next) => {
   try {
-    const { status, page = 1, limit = 20, query } = req.query;
-    const filter = {};
+    const { page = 1, limit = 20, status } = req.query;
+    const filter = status ? { status } : {};
+    const skip   = (Number(page) - 1) * Number(limit);
+    const [orders, total] = await Promise.all([
+      Order.find(filter).sort('-createdAt').skip(skip).limit(Number(limit))
+        .populate('product', 'nameFr images')
+        .populate('buyer',   'name email')
+        .populate('vendor',  'name shopName')
+        .lean(),
+      Order.countDocuments(filter)
+    ]);
+    res.status(200).json({ success: true, orders, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
+  } catch (error) { next(error); }
+};
 
-    if (status) filter.status = status;
+// Update order status
+exports.updateOrderStatus = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Commande non trouvée' });
 
-    // Recherche par numéro de commande (orderNumber)
-    if (query) {
-      filter.orderNumber = { $regex: query, $options: 'i' };
+    // Vérifier les droits
+    const isVendor = order.vendor.toString() === req.user._id.toString();
+    const isAdmin  = req.user.role === 'admin';
+    if (!isVendor && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Non autorisé' });
     }
 
-    const orders = await Order.find(filter)
-      .populate('product', 'nameFr images')
-      .populate('buyer', 'name email')
-      .populate('vendor', 'name shopName email')
-      .sort('-createdAt')
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    const total = await Order.countDocuments(filter);
-
-    res.status(200).json({
-      success: true,
-      count: orders.length,
-      total,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit),
-      orders
-    });
-  } catch (error) {
-    next(error);
-  }
+    order.status = status;
+    await order.save();
+    res.status(200).json({ success: true, message: 'Statut mis à jour', order });
+  } catch (error) { next(error); }
 };
 
 // Get single order
 exports.getOrder = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id)
-      .populate('product')
-      .populate('buyer', 'name email phone')
-      .populate('vendor', 'name shopName');
+      .populate('product', 'nameFr nameAr images price')
+      .populate('buyer',   'name email phone')
+      .populate('vendor',  'name shopName phone')
+      .lean();
+    if (!order) return res.status(404).json({ success: false, message: 'Commande non trouvée' });
 
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Commande non trouvée' });
-    }
-
-    // Check access
-    if (order.buyer._id.toString() !== req.user._id.toString() && 
-        order.vendor._id.toString() !== req.user._id.toString() && 
-        req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Accès refusé' });
-    }
-
-    res.status(200).json({ success: true, order });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Update order status
-exports.updateOrderStatus = async (req, res, next) => {
-  try {
-    const { status, trackingNumber, carrier } = req.body;
-
-    const order = await Order.findById(req.params.id);
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Commande non trouvée' });
-    }
-
-    // Only vendor or admin can update
-    if (order.vendor.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Vérifier les droits d'accès
+    const isBuyer  = order.buyer?._id?.toString() === req.user._id.toString();
+    const isVendor = order.vendor?._id?.toString() === req.user._id.toString();
+    const isAdmin  = req.user.role === 'admin';
+    if (!isBuyer && !isVendor && !isAdmin) {
       return res.status(403).json({ success: false, message: 'Non autorisé' });
     }
 
-    if (status === 'shipped' && trackingNumber) {
-      await order.markAsShipped(trackingNumber, carrier);
-    } else if (status === 'delivered') {
-      await order.markAsDelivered();
-    } else {
-      order.status = status;
-      await order.save();
-    }
-
-    res.status(200).json({ success: true, message: 'Statut mis à jour', order });
-  } catch (error) {
-    next(error);
-  }
+    res.status(200).json({ success: true, order });
+  } catch (error) { next(error); }
 };
 
-// Cancel order
-exports.cancelOrder = async (req, res, next) => {
-  try {
-    const { reason } = req.body;
-
-    const order = await Order.findById(req.params.id);
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Commande non trouvée' });
-    }
-
-    if (!order.isCancellable()) {
-      return res.status(400).json({ success: false, message: 'Commande non annulable' });
-    }
-
-    await order.cancel(reason);
-
-    res.status(200).json({ success: true, message: 'Commande annulée', order });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Get global stats (admin)
+// Global stats (admin)
 exports.getGlobalStats = async (req, res, next) => {
   try {
-    const { period = 'month' } = req.query;
-    const stats = await Order.getGlobalReport(period);
+    const { period = 'month' } = req.params;
+    const now   = new Date();
+    const start = new Date();
+    if (period === 'week')  start.setDate(now.getDate() - 7);
+    if (period === 'month') start.setMonth(now.getMonth() - 1);
+    if (period === 'year')  start.setFullYear(now.getFullYear() - 1);
 
-    res.status(200).json({ success: true, stats });
-  } catch (error) {
-    next(error);
-  }
+    const orders = await Order.find({ createdAt: { $gte: start } }).lean();
+    const totalOrders      = orders.length;
+    const totalRevenue     = orders.reduce((s, o) => s + (o.totalAmount || 0), 0);
+    const totalPlatformFees = totalRevenue * 0.05;
+
+    res.status(200).json({ success: true, stats: { totalOrders, totalRevenue, totalPlatformFees, period } });
+  } catch (error) { next(error); }
 };
