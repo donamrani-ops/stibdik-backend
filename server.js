@@ -121,7 +121,8 @@ app.use('/api/reviews',     reviewRoutes);
 app.use('/api/coupons',     couponRoutes);
 app.use('/api/collections', collectionsRoutes);
 app.use('/api/audit',       auditRoutes);
-app.use('/api/tickets',     ticketRoutes);
+app.use('/api/tickets',           ticketRoutes);
+app.use('/api/stock-notifications', require('./routes/stock-notifications'));
 
 // 404 + Error handler — TOUJOURS en dernier
 app.use(notFound);
