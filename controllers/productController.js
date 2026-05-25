@@ -1,8 +1,9 @@
 const Product  = require('../models/Product');
+const { notifyOnRestock } = require('./stockNotificationController');
 const Category = require('../models/Category');
 const Boost    = require('../models/Boost');
 
-// ─── Helper boost ranking (non-bloquant) ─────────────────────────────────────
+// ─── Helper boost ranking (non-bloquant) ────────────────────────────────────
 async function enrichWithBoostRank(products) {
   if (!products || products.length === 0) return products;
   try {
@@ -50,101 +51,30 @@ async function enrichWithBoostRank(products) {
   }
 }
 
-// ─── GET /api/products ────────────────────────────────────────────────────────
-// FIX : query + category (slug → _id) + subCategory + total correct
+// Get all products with filters
 exports.getAllProducts = async (req, res, next) => {
   try {
-    const {
-      page = 1,
-      limit = 20,
-      query,          // ← FIX 1 : mot-clé de recherche (manquait)
-      category,       // peut être un slug ou un _id
-      subCategory,    // sous-catégorie (slug ou _id)
-      city,
-      minPrice,
-      maxPrice,
-      type,
-      vendor,          // filtre par vendeur (ObjectId) — utilisé par VendorShop
-      sort = '-createdAt'
-    } = req.query;
-
-    // FIX 2 : résoudre slug → ObjectId pour category et subCategory
-    let categoryId  = category;
-    let subCategoryId = subCategory;
-
-    if (category && !category.match(/^[0-9a-fA-F]{24}$/)) {
-      // C'est un slug, pas un ObjectId
-      // Chercher par slug sans forcer active:true (plus robuste)
-      const cat = await Category.findOne({ slug: category });
-      if (cat) {
-        categoryId = cat._id;
-      } else {
-        // Slug non trouvé — retourner vide proprement
-        return res.json({ success: true, count: 0, total: 0, page: 1, pages: 0, products: [] });
-      }
-    }
-
-    if (subCategory && !subCategory.match(/^[0-9a-fA-F]{24}$/)) {
-      const subCat = await Category.findOne({ slug: subCategory });
-      subCategoryId = subCat ? subCat._id : null;
-    }
-
-    // FIX 3 : si subCategory fourni, filtrer sur lui plutôt que la catégorie parente
-    const effectiveCategoryId = subCategoryId || categoryId;
-
-    const products = await Product.advancedSearch({
-      query,
-      category: effectiveCategoryId,
-      city,
-      minPrice,
-      maxPrice,
-      type,
-      vendor,          // filtre boutique vendeur
-      sort,
-      page,
-      limit
-    });
-
-    // FIX 4 : total cohérent avec les filtres appliqués
-    const countFilter = { status: 'active' };
-    if (effectiveCategoryId) countFilter.category = effectiveCategoryId;
-    if (query) countFilter.$text = { $search: query };
-    if (vendor) countFilter.vendor = vendor;
-
-    const total = await Product.countDocuments(countFilter);
-
+    const { page = 1, limit = 20, category, city, minPrice, maxPrice, type, sort = '-createdAt' } = req.query;
+    const products = await Product.advancedSearch({ category, city, minPrice, maxPrice, type, sort, page, limit });
     const enriched = await enrichWithBoostRank(products);
-
-    res.status(200).json({
-      success: true,
-      count:   enriched.length,
-      total,
-      page:    parseInt(page),
-      pages:   Math.ceil(total / limit),
-      products: enriched
-    });
-  } catch (error) {
-    next(error);
-  }
+    const total    = await Product.countDocuments({ status: 'active' });
+    res.status(200).json({ success: true, count: enriched.length, total, page: parseInt(page), pages: Math.ceil(total / limit), products: enriched });
+  } catch (error) { next(error); }
 };
 
 // Get single product
 exports.getProduct = async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id)
-      .populate('vendor',   'name shopName shopLogo')
-      .populate('category', 'name nameAr icon slug parent');
-
+    const product = await Product.findById(req.params.id).populate('vendor', 'name shopName shopLogo').populate('category', 'name nameAr icon');
     if (!product) return res.status(404).json({ success: false, message: 'Produit non trouvé' });
-
     res.status(200).json({ success: true, product });
   } catch (error) { next(error); }
 };
 
-// Create product
+// Create product (Vendor/Admin)
 exports.createProduct = async (req, res, next) => {
   try {
-    req.body.vendor     = req.user._id;
+    req.body.vendor = req.user._id;
     req.body.vendorName = req.user.shopName || req.user.name;
     const product = await Product.create(req.body);
     res.status(201).json({ success: true, message: 'Produit créé', product });
@@ -158,7 +88,16 @@ exports.updateProduct = async (req, res, next) => {
     if (!product) return res.status(404).json({ success: false, message: 'Produit non trouvé' });
     if (product.vendor.toString() !== req.user._id.toString() && req.user.role !== 'admin')
       return res.status(403).json({ success: false, message: 'Non autorisé' });
+    const oldStock = product.stock || 0;
     product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+
+    // Si le stock passe de 0 à > 0, notifier les abonnés
+    const newStock = product.stock || 0;
+    if (oldStock === 0 && newStock > 0) {
+      const name = product.nameFr || product.nameAr || 'Produit';
+      notifyOnRestock(product._id, name).catch(e => console.warn('Restock notify error:', e.message));
+    }
+
     res.status(200).json({ success: true, message: 'Produit mis à jour', product });
   } catch (error) { next(error); }
 };
@@ -194,38 +133,10 @@ exports.getSimilarProducts = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// Get trending
+// Get trending products
 exports.getTrending = async (req, res, next) => {
   try {
     const products = await Product.getTrending(10);
     res.status(200).json({ success: true, products });
-  } catch (error) { next(error); }
-};
-
-// Update category (Admin)
-exports.updateProductCategory = async (req, res, next) => {
-  try {
-    const { category, subCategory } = req.body;
-    if (!category) return res.status(400).json({ success: false, message: 'Category is required' });
-
-    // Résoudre slug → ObjectId si nécessaire
-    let categoryId = category;
-    if (category && !category.match(/^[0-9a-fA-F]{24}$/)) {
-      const cat = await Category.findOne({ slug: category });
-      if (!cat) return res.status(404).json({ success: false, message: `Catégorie "${category}" introuvable` });
-      categoryId = cat._id;
-    }
-
-    const update = { category: categoryId };
-    // Mettre à jour la sous-catégorie si fournie (stockée comme string slug)
-    if (subCategory !== undefined) update.subCategory = subCategory;
-
-    const product = await Product.findByIdAndUpdate(
-      req.params.id, update,
-      { new: true, runValidators: true }
-    ).populate('category', 'name nameAr icon slug');
-
-    if (!product) return res.status(404).json({ success: false, message: 'Produit non trouvé' });
-    res.status(200).json({ success: true, message: 'Catégorie mise à jour', product });
   } catch (error) { next(error); }
 };
