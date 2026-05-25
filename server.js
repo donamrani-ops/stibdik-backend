@@ -122,7 +122,8 @@ app.use('/api/coupons',     couponRoutes);
 app.use('/api/collections', collectionsRoutes);
 app.use('/api/audit',       auditRoutes);
 app.use('/api/tickets',           ticketRoutes);
-app.use('/api/stock-notifications', require('./routes/stock-notifications'));
+// Stock notifications — chargement conditionnel (fichier optionnel)
+try { app.use('/api/stock-notifications', require('./routes/stock-notifications')); } catch(e) { console.warn('stock-notifications route non chargée:', e.message); }
 
 // 404 + Error handler — TOUJOURS en dernier
 app.use(notFound);
