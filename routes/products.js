@@ -4,25 +4,23 @@ const router = express.Router();
 const productController = require('../controllers/productController');
 const { protect, authorize } = require('../middleware/auth');
 
-// ─── Routes publiques ────────────────────────────────────────
-router.get('/', productController.getAllProducts);
-router.get('/trending', productController.getTrending);
-router.get('/:id/similar', productController.getSimilarProducts);
-router.get('/:id', productController.getProduct);
-router.patch('/:id/views', productController.incrementViews);
+// ─── Routes publiques ────────────────────────────────────────────────────────
+router.get('/',                   productController.getAllProducts);
+router.get('/trending',           productController.getTrending);
+router.get('/:id/similar',        productController.getSimilarProducts);
+router.get('/:id',                productController.getProduct);
+router.patch('/:id/views',        productController.incrementViews);
 
-// ─── Routes protégées ────────────────────────────────────────
-
-// Création : vendor ou admin uniquement
-router.post('/', protect, authorize('vendor', 'admin'), productController.createProduct);
-
-// Modification : vendor ou admin, avec restriction des champs (voir productController)
-router.put('/:id', protect, authorize('vendor', 'admin'), productController.updateProduct);
-
-// Suppression : vendor ou admin
+// ─── Routes protégées ────────────────────────────────────────────────────────
+router.post('/',    protect, authorize('vendor', 'admin'), productController.createProduct);
+router.put('/:id',  protect, authorize('vendor', 'admin'), productController.updateProduct);
 router.delete('/:id', protect, authorize('vendor', 'admin'), productController.deleteProduct);
 
-// Modification catégorie : admin uniquement
+// Like / Unlike
+router.post('/:id/like',   protect, productController.toggleLike);
+router.delete('/:id/like', protect, productController.toggleLike);
+
+// Admin only
 router.patch('/:id/category', protect, authorize('admin'), productController.updateProductCategory);
 
 module.exports = router;
