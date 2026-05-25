@@ -203,3 +203,23 @@ exports.updateProductCategory = async (req, res, next) => {
     res.status(200).json({ success: true, message: 'Catégorie mise à jour', product });
   } catch (error) { next(error); }
 };
+
+// Toggle like (POST = like, DELETE = unlike)
+exports.toggleLike = async (req, res, next) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ success: false, message: 'Produit non trouvé' });
+
+    const userId  = req.user._id.toString();
+    const isLike  = req.method === 'POST';
+    const likes   = product.likes || 0;
+
+    // Incrémenter/décrémenter le compteur
+    await Product.findByIdAndUpdate(req.params.id, {
+      $inc: { likes: isLike ? 1 : -1 }
+    });
+
+    const newCount = Math.max(0, likes + (isLike ? 1 : -1));
+    res.status(200).json({ success: true, liked: isLike, likeCount: newCount });
+  } catch (error) { next(error); }
+};
