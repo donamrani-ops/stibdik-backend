@@ -91,19 +91,22 @@ productSchema.statics.advancedSearch = async function(params) {
 
   const filter = { status };
 
-  // category peut être un ObjectId OU un slug — résoudre si c'est un slug
+  // category peut être un ObjectId OU un slug — résoudre en ObjectId si nécessaire
   if (category) {
     if (mongoose.Types.ObjectId.isValid(category)) {
-      filter.category = category;
+      filter.category = new mongoose.Types.ObjectId(category);
     } else {
-      // C'est un slug — chercher l'ObjectId dans Category
+      // C'est un slug — chercher l'ObjectId correspondant
       try {
         const Category = mongoose.model('Category');
-        const cat = await Category.findOne({ slug: category }).lean();
-        if (cat) filter.category = cat._id;
-        // Si catégorie non trouvée, on ne filtre pas (retourne tous les produits actifs)
+        const cat = await Category.findOne({ slug: category }).select('_id').lean();
+        if (cat) {
+          filter.category = cat._id;
+        }
+        // Si slug inconnu → pas de filtre category (retourne tous les produits actifs)
       } catch(e) {
-        // Category model pas encore chargé — ignorer le filtre
+        console.warn('Category slug resolution failed (non-fatal):', e.message);
+        // Ne pas assigner filter.category pour éviter le CastError
       }
     }
   }
