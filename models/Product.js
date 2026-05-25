@@ -1,63 +1,37 @@
 const mongoose = require('mongoose');
 
 const productSchema = new mongoose.Schema({
-  // ── Identification ───────────────────────────────────────────────────────
   nameFr:      { type: String, required: true, trim: true, maxlength: 200 },
   nameAr:      { type: String, trim: true, maxlength: 200, default: '' },
   descFr:      { type: String, trim: true, maxlength: 3000, default: '' },
   descAr:      { type: String, trim: true, maxlength: 3000, default: '' },
-
-  // ── Catégorie & type ─────────────────────────────────────────────────────
   category:    { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
   subCategory: { type: String, trim: true, default: '' },
   type:        { type: String, enum: ['ecommerce','classifieds','rfq'], default: 'ecommerce' },
-
-  // ── Prix ─────────────────────────────────────────────────────────────────
   price:       { type: Number, required: true, min: 0 },
   original:    { type: Number, default: 0 },
-
-  // ── Stock ────────────────────────────────────────────────────────────────
   stock:       { type: Number, default: 1, min: 0 },
-
-  // ── TAILLES ──────────────────────────────────────────────────────────────
-  // Vêtements : ['S','M','L','XL','XXL']
-  // Chaussures: [36,37,38,39,40]
-  // Autres    : [] (vide)
   sizes:       { type: [mongoose.Schema.Types.Mixed], default: [] },
-
-  // ── Attributs produit ────────────────────────────────────────────────────
   condition:   { type: String, default: 'Bon état' },
   brand:       { type: String, trim: true, default: '' },
   city:        { type: String, trim: true, default: '' },
-
-  // ── Images ───────────────────────────────────────────────────────────────
   images: [{
     url:      { type: String },
     publicId: { type: String },
     isMain:   { type: Boolean, default: false },
     status:   { type: String, default: 'active' }
   }],
-
-  // ── Vendeur ──────────────────────────────────────────────────────────────
   vendor:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   vendorName:  { type: String, default: '' },
-
-  // ── Stats ────────────────────────────────────────────────────────────────
   views:       { type: Number, default: 0 },
   sold:        { type: Number, default: 0 },
   rating:      { type: Number, default: 0 },
   reviews:     { type: Number, default: 0 },
-
-  // ── Statut ───────────────────────────────────────────────────────────────
   status:      { type: String, enum: ['active','inactive','pending','rejected'], default: 'active' },
-
-  // ── Boost ────────────────────────────────────────────────────────────────
   isBoosted:   { type: Boolean, default: false },
   boostExpiry: { type: Date },
-
 }, { timestamps: true });
 
-// ─── Index ───────────────────────────────────────────────────────────────────
 productSchema.index({ nameFr: 'text', nameAr: 'text', descFr: 'text', brand: 'text' });
 productSchema.index({ category: 1, status: 1 });
 productSchema.index({ vendor: 1, status: 1 });
@@ -65,7 +39,6 @@ productSchema.index({ price: 1 });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ views: -1 });
 
-// ─── Méthodes instance ───────────────────────────────────────────────────────
 productSchema.methods.incrementViews = async function() {
   this.views = (this.views || 0) + 1;
   return this.save();
@@ -81,7 +54,10 @@ productSchema.methods.getActiveImages = function() {
   return this.images.filter(img => img.status !== 'deleted');
 };
 
-// ─── advancedSearch — retourne DIRECTEMENT un tableau (compatible productController) ──
+// ─── Cache slug→ObjectId pour éviter des requêtes répétées ──────────────────
+const _slugCache = {};
+
+// ─── advancedSearch ──────────────────────────────────────────────────────────
 productSchema.statics.advancedSearch = async function(params) {
   const {
     category, city, minPrice, maxPrice, type,
@@ -91,22 +67,30 @@ productSchema.statics.advancedSearch = async function(params) {
 
   const filter = { status };
 
-  // category peut être un ObjectId OU un slug — résoudre en ObjectId si nécessaire
   if (category) {
-    if (mongoose.Types.ObjectId.isValid(category)) {
-      filter.category = new mongoose.Types.ObjectId(category);
+    // Déjà un ObjectId valide → utiliser directement
+    if (mongoose.Types.ObjectId.isValid(category) && String(category).length === 24) {
+      filter.category = new mongoose.Types.ObjectId(String(category));
     } else {
-      // C'est un slug — chercher l'ObjectId correspondant
-      try {
-        const Category = mongoose.model('Category');
-        const cat = await Category.findOne({ slug: category }).select('_id').lean();
-        if (cat) {
-          filter.category = cat._id;
+      // C'est un slug → résoudre via cache ou requête DB
+      if (_slugCache[category]) {
+        filter.category = _slugCache[category];
+      } else {
+        try {
+          // Chercher dans la collection categories directement (sans passer par le model)
+          const db = mongoose.connection.db;
+          const cat = await db.collection('categories').findOne(
+            { slug: category },
+            { projection: { _id: 1 } }
+          );
+          if (cat) {
+            _slugCache[category] = cat._id;
+            filter.category = cat._id;
+          }
+          // Si slug inconnu → ne pas filtrer par catégorie
+        } catch(e) {
+          // Accès DB échoué → ignorer le filtre catégorie silencieusement
         }
-        // Si slug inconnu → pas de filtre category (retourne tous les produits actifs)
-      } catch(e) {
-        console.warn('Category slug resolution failed (non-fatal):', e.message);
-        // Ne pas assigner filter.category pour éviter le CastError
       }
     }
   }
@@ -136,7 +120,6 @@ productSchema.statics.advancedSearch = async function(params) {
   return products;
 };
 
-// ─── findSimilar ─────────────────────────────────────────────────────────────
 productSchema.statics.findSimilar = async function(excludeId, categoryId, limit = 4) {
   return this.find({ _id: { $ne: excludeId }, category: categoryId, status: 'active' })
     .sort('-views')
@@ -145,10 +128,9 @@ productSchema.statics.findSimilar = async function(excludeId, categoryId, limit 
     .lean();
 };
 
-// ─── getTrending ─────────────────────────────────────────────────────────────
 productSchema.statics.getTrending = async function(limit = 10) {
   return this.find({ status: 'active' })
-    .sort('-views -sold')
+    .sort({ views: -1, sold: -1 })
     .limit(limit)
     .populate('vendor',   'name shopName shopLogo')
     .populate('category', 'name nameAr slug icon')
