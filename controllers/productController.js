@@ -1,5 +1,4 @@
 const Product  = require('../models/Product');
-const { notifyOnRestock } = require('./stockNotificationController');
 const Category = require('../models/Category');
 const Boost    = require('../models/Boost');
 
@@ -51,6 +50,31 @@ async function enrichWithBoostRank(products) {
   }
 }
 
+// ─── Helper restock — notifie les abonnés (chargement lazy pour éviter circular deps) ─
+async function triggerRestockNotifications(productId, productName) {
+  try {
+    // Chargement lazy pour éviter les dépendances circulaires
+    const StockNotification = require('../models/StockNotification');
+    const emailService      = require('../services/emailService');
+    const subs = await StockNotification.find({ product: productId, notified: false });
+    if (!subs.length) return;
+    await Promise.all(subs.map(async (sub) => {
+      try {
+        if (emailService.sendRestockNotification) {
+          await emailService.sendRestockNotification(sub.email, sub.userName, productName, productId);
+        }
+        sub.notified   = true;
+        sub.notifiedAt = new Date();
+        await sub.save();
+      } catch (e) { console.warn('Restock email failed:', e.message); }
+    }));
+    console.log(`✅ ${subs.length} restock notification(s) sent for ${productName}`);
+  } catch (err) {
+    // StockNotification model peut ne pas exister encore — silencieux
+    console.warn('triggerRestockNotifications (non-fatal):', err.message);
+  }
+}
+
 // Get all products with filters
 exports.getAllProducts = async (req, res, next) => {
   try {
@@ -88,14 +112,15 @@ exports.updateProduct = async (req, res, next) => {
     if (!product) return res.status(404).json({ success: false, message: 'Produit non trouvé' });
     if (product.vendor.toString() !== req.user._id.toString() && req.user.role !== 'admin')
       return res.status(403).json({ success: false, message: 'Non autorisé' });
+
     const oldStock = product.stock || 0;
     product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-
-    // Si le stock passe de 0 à > 0, notifier les abonnés
     const newStock = product.stock || 0;
+
+    // Notifier les abonnés si le stock repasse à > 0
     if (oldStock === 0 && newStock > 0) {
       const name = product.nameFr || product.nameAr || 'Produit';
-      notifyOnRestock(product._id, name).catch(e => console.warn('Restock notify error:', e.message));
+      triggerRestockNotifications(product._id, name).catch(() => {});
     }
 
     res.status(200).json({ success: true, message: 'Produit mis à jour', product });
