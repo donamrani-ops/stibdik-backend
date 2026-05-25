@@ -120,3 +120,38 @@ exports.notifyAdminTicketReply = async (ticket, message) => {
     console.warn('Email admin reply failed:', err.message);
   }
 };
+
+// Email restock — notifier un abonné que le produit est de nouveau dispo
+exports.sendRestockNotification = async (email, userName, productName, productId) => {
+  if (!process.env.SMTP_USER) return;
+  try {
+    await transporter.sendMail({
+      from: `"Stibdik" <${FROM_EMAIL}>`,
+      to:   email,
+      subject: `✅ "${productName}" est de nouveau disponible !`,
+      html: `
+        <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+          <div style="background:#00796B;color:#fff;padding:20px;border-radius:8px 8px 0 0">
+            <h2 style="margin:0">✅ Bonne nouvelle !</h2>
+          </div>
+          <div style="background:#f9f9f9;padding:20px;border:1px solid #e0e0e0">
+            <p>Bonjour <strong>${userName}</strong>,</p>
+            <p>Le produit que vous suiviez est de nouveau en stock :</p>
+            <h3 style="color:#00796B">${productName}</h3>
+            <p style="color:#f44336;font-weight:700">⚡ Dépêchez-vous, le stock est limité !</p>
+            <br>
+            <a href="https://stibdik.netlify.app"
+               style="background:#00796B;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">
+              Voir le produit →
+            </a>
+          </div>
+          <div style="text-align:center;font-size:11px;color:#9e9e9e;padding:12px">
+            Stibdik — Marketplace Maroc · Vous recevez cet email car vous avez demandé une notification de réapprovisionnement.
+          </div>
+        </div>
+      `
+    });
+  } catch (err) {
+    console.warn('Restock email failed:', err.message);
+  }
+};
