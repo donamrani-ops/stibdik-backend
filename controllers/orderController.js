@@ -174,3 +174,47 @@ exports.getGlobalStats = async (req, res, next) => {
     res.status(200).json({ success: true, stats: { totalOrders, totalRevenue, totalPlatformFees, period } });
   } catch (error) { next(error); }
 };
+
+// Cancel order (buyer)
+exports.cancelOrder = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Commande non trouvée' });
+    const isBuyer = order.buyer.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+    if (!isBuyer && !isAdmin) return res.status(403).json({ success: false, message: 'Non autorisé' });
+    if (['delivered','completed','cancelled'].includes(order.status))
+      return res.status(400).json({ success: false, message: 'Impossible d\'annuler cette commande' });
+    order.status = 'cancelled';
+    await order.save();
+    res.status(200).json({ success: true, message: 'Commande annulée', order });
+  } catch (error) { next(error); }
+};
+
+// Confirm delivery (buyer)
+exports.confirmDelivery = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Commande non trouvée' });
+    if (order.buyer.toString() !== req.user._id.toString())
+      return res.status(403).json({ success: false, message: 'Non autorisé' });
+    order.status = 'delivered';
+    await order.save();
+    res.status(200).json({ success: true, message: 'Livraison confirmée', order });
+  } catch (error) { next(error); }
+};
+
+// Get vendor stats
+exports.getVendorStats = async (req, res, next) => {
+  try {
+    const orders = await Order.find({ vendor: req.user._id }).lean();
+    const totalRevenue = orders.filter(o => ['delivered','completed'].includes(o.status))
+      .reduce((s, o) => s + (o.totalAmount || 0), 0);
+    res.status(200).json({ success: true, stats: {
+      totalOrders: orders.length,
+      totalRevenue,
+      pending: orders.filter(o => o.status === 'pending').length,
+      delivered: orders.filter(o => ['delivered','completed'].includes(o.status)).length,
+    }});
+  } catch (error) { next(error); }
+};
