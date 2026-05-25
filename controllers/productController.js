@@ -1,5 +1,4 @@
 const Product  = require('../models/Product');
-const Category = require('../models/Category');
 const Boost    = require('../models/Boost');
 
 // ─── Helper boost ranking (non-bloquant) ────────────────────────────────────
