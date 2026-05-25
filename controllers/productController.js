@@ -165,3 +165,18 @@ exports.getTrending = async (req, res, next) => {
     res.status(200).json({ success: true, products });
   } catch (error) { next(error); }
 };
+
+// Update product category (admin only)
+exports.updateProductCategory = async (req, res, next) => {
+  try {
+    const { category } = req.body;
+    if (!category) return res.status(400).json({ success: false, message: 'category requis' });
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { category },
+      { new: true, runValidators: true }
+    ).populate('category', 'name nameAr slug icon');
+    if (!product) return res.status(404).json({ success: false, message: 'Produit non trouvé' });
+    res.status(200).json({ success: true, message: 'Catégorie mise à jour', product });
+  } catch (error) { next(error); }
+};
