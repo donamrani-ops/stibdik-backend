@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Product  = require('../models/Product');
 const Boost    = require('../models/Boost');
 
@@ -168,13 +169,36 @@ exports.getTrending = async (req, res, next) => {
 // Update product category (admin only)
 exports.updateProductCategory = async (req, res, next) => {
   try {
-    const { category } = req.body;
+    let { category, subCategory } = req.body;
     if (!category) return res.status(400).json({ success: false, message: 'category requis' });
+
+    // Résoudre slug → ObjectId si nécessaire
+    if (!mongoose.Types.ObjectId.isValid(category) || String(category).length !== 24) {
+      try {
+        const db = mongoose.connection.db;
+        const cat = await db.collection('categories').findOne(
+          { slug: category },
+          { projection: { _id: 1 } }
+        );
+        if (cat) {
+          category = cat._id;
+        } else {
+          return res.status(404).json({ success: false, message: `Catégorie "${category}" non trouvée` });
+        }
+      } catch(e) {
+        return res.status(500).json({ success: false, message: 'Erreur résolution catégorie' });
+      }
+    }
+
+    const updateData = { category };
+    if (subCategory !== undefined) updateData.subCategory = subCategory;
+
     const product = await Product.findByIdAndUpdate(
       req.params.id,
-      { category },
+      updateData,
       { new: true, runValidators: true }
     ).populate('category', 'name nameAr slug icon');
+
     if (!product) return res.status(404).json({ success: false, message: 'Produit non trouvé' });
     res.status(200).json({ success: true, message: 'Catégorie mise à jour', product });
   } catch (error) { next(error); }
