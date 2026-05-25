@@ -90,7 +90,24 @@ productSchema.statics.advancedSearch = async function(params) {
   } = params;
 
   const filter = { status };
-  if (category)             filter.category = category;
+
+  // category peut être un ObjectId OU un slug — résoudre si c'est un slug
+  if (category) {
+    if (mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
+    } else {
+      // C'est un slug — chercher l'ObjectId dans Category
+      try {
+        const Category = mongoose.model('Category');
+        const cat = await Category.findOne({ slug: category }).lean();
+        if (cat) filter.category = cat._id;
+        // Si catégorie non trouvée, on ne filtre pas (retourne tous les produits actifs)
+      } catch(e) {
+        // Category model pas encore chargé — ignorer le filtre
+      }
+    }
+  }
+
   if (city)                 filter.city = new RegExp(city, 'i');
   if (minPrice || maxPrice) filter.price = {};
   if (minPrice)             filter.price.$gte = Number(minPrice);
@@ -105,8 +122,6 @@ productSchema.statics.advancedSearch = async function(params) {
 
   const skip = (Number(page) - 1) * Number(limit);
 
-  // ⚠️ Retourne un TABLEAU directement (pas un objet {products, total})
-  // pour compatibilité avec productController.getAllProducts
   const products = await this.find(filter)
     .sort(sortObj)
     .skip(skip)
