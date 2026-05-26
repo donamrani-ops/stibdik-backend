@@ -155,3 +155,36 @@ exports.sendRestockNotification = async (email, userName, productName, productId
     console.warn('Restock email failed:', err.message);
   }
 };
+
+// Email de confirmation d'abonnement restock
+exports.sendRestockSubscriptionConfirmation = async (email, userName, productName) => {
+  if (!process.env.SMTP_USER) return;
+  try {
+    await transporter.sendMail({
+      from: `"Stibdik" <${FROM_EMAIL}>`,
+      to:   email,
+      subject: `🔔 Vous serez notifié dès le retour de "${productName}"`,
+      html: `
+        <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+          <div style="background:#00796B;color:#fff;padding:20px;border-radius:8px 8px 0 0">
+            <h2 style="margin:0">🔔 Notification activée</h2>
+          </div>
+          <div style="background:#f9f9f9;padding:20px;border:1px solid #e0e0e0">
+            <p>Bonjour <strong>${userName}</strong>,</p>
+            <p>Votre alerte a bien été enregistrée pour :</p>
+            <h3 style="color:#00796B;margin:12px 0">${productName}</h3>
+            <p>Vous recevrez un email dès que ce produit sera de nouveau disponible.</p>
+            <p style="color:#9e9e9e;font-size:12px;margin-top:16px">
+              Vous pouvez annuler cette notification depuis la page du produit sur Stibdik.
+            </p>
+          </div>
+          <div style="text-align:center;font-size:11px;color:#9e9e9e;padding:12px">
+            Stibdik — Marketplace Maroc
+          </div>
+        </div>
+      `
+    });
+  } catch (err) {
+    console.warn('Subscription confirmation email failed:', err.message);
+  }
+};
