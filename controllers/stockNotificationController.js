@@ -10,31 +10,45 @@ exports.subscribe = async (req, res, next) => {
 
     const product = await Product.findById(productId);
     if (!product) return res.status(404).json({ success: false, message: 'Produit non trouvé' });
-    if (product.stock > 0) return res.status(400).json({ success: false, message: 'Produit déjà disponible' });
 
     const email    = req.user?.email || req.body.email;
     const userName = req.user?.name  || req.body.userName || 'Client';
     if (!email) return res.status(400).json({ success: false, message: 'Email requis' });
 
-    // Upsert — pas de doublon
-    const doc = await StockNotification.findOneAndUpdate(
-      { product: productId, email },
-      { product: productId, email, userName, user: req.user?._id, notified: false },
-      { upsert: true, new: true, rawResult: true }
-    );
+    // Vérifier si déjà abonné
+    const existing = await StockNotification.findOne({ product: productId, email });
 
-    // Envoyer email de confirmation seulement si c'est un nouvel abonnement
-    const isNew = doc.lastErrorObject?.upserted;
-    if (isNew) {
+    if (!existing) {
+      // Nouvel abonnement
+      await StockNotification.create({
+        product: productId, email, userName,
+        user: req.user?._id, notified: false
+      });
+      // Email de confirmation
       const productName = product.nameFr || product.nameAr || 'Produit';
-      emailService.sendRestockSubscriptionConfirmation(email, userName, productName).catch(() => {});
+      console.log(`📧 Sending subscription confirmation to ${email} for "${productName}"`);
+      emailService.sendRestockSubscriptionConfirmation(email, userName, productName)
+        .then(() => console.log(`✅ Confirmation sent to ${email}`))
+        .catch(e => console.warn(`❌ Confirmation email failed: ${e.message}`));
+    } else if (existing.notified) {
+      // Était notifié, on réabonne
+      existing.notified = false;
+      existing.notifiedAt = null;
+      await existing.save();
     }
+    // Si déjà abonné et pas notifié → pas de doublon, juste retourner OK
 
     res.status(200).json({ success: true, message: 'Notification activée' });
-  } catch (err) { next(err); }
+  } catch (err) {
+    // Duplicate key = déjà abonné — silencieux
+    if (err.code === 11000) {
+      return res.status(200).json({ success: true, message: 'Déjà inscrit' });
+    }
+    next(err);
+  }
 };
 
-// GET /api/stock-notifications/check/:productId — vérifier si déjà abonné
+// GET /api/stock-notifications/check/:productId
 exports.checkSubscription = async (req, res, next) => {
   try {
     const email = req.user?.email;
@@ -46,22 +60,31 @@ exports.checkSubscription = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// Appelé par productController.updateProduct quand stock passe de 0 à > 0
+// Appelé par productController quand stock 0 → >0
 exports.notifyOnRestock = async (productId, productName) => {
   try {
-    const subs = await StockNotification.find({ product: productId, notified: false });
+    const mongoose = require('mongoose');
+    const pid = mongoose.Types.ObjectId.isValid(productId)
+      ? new mongoose.Types.ObjectId(String(productId))
+      : productId;
+
+    const subs = await StockNotification.find({ product: pid, notified: false });
+    console.log(`📦 Restock "${productName}": ${subs.length} abonné(s)`);
     if (!subs.length) return;
 
-    await Promise.all(subs.map(async (sub) => {
+    for (const sub of subs) {
       try {
+        console.log(`📧 Envoi restock email → ${sub.email}`);
         await emailService.sendRestockNotification(sub.email, sub.userName, productName, productId);
-        sub.notified  = true;
+        sub.notified   = true;
         sub.notifiedAt = new Date();
         await sub.save();
-      } catch (e) { console.warn('Restock email failed:', e.message); }
-    }));
-
-    console.log(`✅ ${subs.length} notification(s) restock envoyée(s) pour ${productName}`);
+        console.log(`✅ Restock email envoyé → ${sub.email}`);
+      } catch (e) {
+        console.warn(`❌ Restock email échoué (${sub.email}): ${e.message}`);
+      }
+    }
+    console.log(`✅ ${subs.length} restock notification(s) traitée(s) pour "${productName}"`);
   } catch (err) {
     console.error('notifyOnRestock error:', err.message);
   }
