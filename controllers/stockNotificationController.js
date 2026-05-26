@@ -17,11 +17,18 @@ exports.subscribe = async (req, res, next) => {
     if (!email) return res.status(400).json({ success: false, message: 'Email requis' });
 
     // Upsert — pas de doublon
-    await StockNotification.findOneAndUpdate(
+    const doc = await StockNotification.findOneAndUpdate(
       { product: productId, email },
       { product: productId, email, userName, user: req.user?._id, notified: false },
-      { upsert: true, new: true }
+      { upsert: true, new: true, rawResult: true }
     );
+
+    // Envoyer email de confirmation seulement si c'est un nouvel abonnement
+    const isNew = doc.lastErrorObject?.upserted;
+    if (isNew) {
+      const productName = product.nameFr || product.nameAr || 'Produit';
+      emailService.sendRestockSubscriptionConfirmation(email, userName, productName).catch(() => {});
+    }
 
     res.status(200).json({ success: true, message: 'Notification activée' });
   } catch (err) { next(err); }
