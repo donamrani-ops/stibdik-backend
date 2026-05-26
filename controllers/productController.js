@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const Product  = require('../models/Product');
 const Boost    = require('../models/Boost');
+// Import lazy pour éviter les dépendances circulaires
+const getStockNotifCtrl = () => require('./stockNotificationController');
 
 // ─── Helper boost ranking (non-bloquant) ────────────────────────────────────
 async function enrichWithBoostRank(products) {
@@ -50,27 +52,11 @@ async function enrichWithBoostRank(products) {
   }
 }
 
-// ─── Helper restock — notifie les abonnés (chargement lazy pour éviter circular deps) ─
+// ─── Helper restock — délègue au stockNotificationController ─────────────────
 async function triggerRestockNotifications(productId, productName) {
   try {
-    // Chargement lazy pour éviter les dépendances circulaires
-    const StockNotification = require('../models/StockNotification');
-    const emailService      = require('../services/emailService');
-    const subs = await StockNotification.find({ product: productId, notified: false });
-    if (!subs.length) return;
-    await Promise.all(subs.map(async (sub) => {
-      try {
-        if (emailService.sendRestockNotification) {
-          await emailService.sendRestockNotification(sub.email, sub.userName, productName, productId);
-        }
-        sub.notified   = true;
-        sub.notifiedAt = new Date();
-        await sub.save();
-      } catch (e) { console.warn('Restock email failed:', e.message); }
-    }));
-    console.log(`✅ ${subs.length} restock notification(s) sent for ${productName}`);
+    await getStockNotifCtrl().notifyOnRestock(productId, productName);
   } catch (err) {
-    // StockNotification model peut ne pas exister encore — silencieux
     console.warn('triggerRestockNotifications (non-fatal):', err.message);
   }
 }
