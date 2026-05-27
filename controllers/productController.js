@@ -214,3 +214,18 @@ exports.toggleLike = async (req, res, next) => {
     res.status(200).json({ success: true, liked: isLike, likeCount: newCount });
   } catch (error) { next(error); }
 };
+
+// Get my products (vendor)
+exports.getMyProducts = async (req, res, next) => {
+  try {
+    const { limit = 100, status } = req.query;
+    const filter = { vendor: req.user._id };
+    if (status) filter.status = status;
+    const products = await Product.find(filter)
+      .sort('-createdAt')
+      .limit(Number(limit))
+      .populate('category', 'name nameAr slug icon')
+      .lean();
+    res.status(200).json({ success: true, products, total: products.length });
+  } catch (error) { next(error); }
+};
