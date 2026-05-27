@@ -123,7 +123,7 @@ app.use('/api/collections', collectionsRoutes);
 app.use('/api/audit',       auditRoutes);
 app.use('/api/tickets',           ticketRoutes);
 // Stock notifications — chargement conditionnel (fichier optionnel)
-try { app.use('/api/stock-notifications', require('./routes/stock-notifications')); } catch(e) { console.warn('stock-notifications route non chargée:', e.message); }
+app.use('/api/stock-notifications', require('./routes/stock-notifications'));
 
 // 404 + Error handler — TOUJOURS en dernier
 app.use(notFound);
