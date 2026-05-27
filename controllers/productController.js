@@ -99,9 +99,9 @@ exports.updateProduct = async (req, res, next) => {
     if (product.vendor.toString() !== req.user._id.toString() && req.user.role !== 'admin')
       return res.status(403).json({ success: false, message: 'Non autorisé' });
 
-    const oldStock = product.stock || 0;
+    const oldStock = Number(product.stock) || 0;
     product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-    const newStock = product.stock || 0;
+    const newStock = Number(product.stock) || 0;
 
     // Notifier les abonnés si le stock repasse à > 0
     if (oldStock === 0 && newStock > 0) {
