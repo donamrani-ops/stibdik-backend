@@ -99,14 +99,19 @@ exports.updateProduct = async (req, res, next) => {
     if (product.vendor.toString() !== req.user._id.toString() && req.user.role !== 'admin')
       return res.status(403).json({ success: false, message: 'Non autorisé' });
 
-    const oldStock = Number(product.stock) || 0;
+    const oldStock = Number(product.stock);
+    console.log(`📦 updateProduct: "${product.nameFr}" — oldStock=${oldStock}, req.body.stock=${req.body.stock}`);
     product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-    const newStock = Number(product.stock) || 0;
+    const newStock = Number(product.stock);
+    console.log(`📦 updateProduct après save: newStock=${newStock}`);
 
     // Notifier les abonnés si le stock repasse à > 0
     if (oldStock === 0 && newStock > 0) {
       const name = product.nameFr || product.nameAr || 'Produit';
-      triggerRestockNotifications(product._id, name).catch(() => {});
+      console.log(`🔔 Déclenchement restock pour "${name}" (${oldStock}→${newStock})`);
+      triggerRestockNotifications(product._id, name).catch(e=>console.error('restock error:',e));
+    } else {
+      console.log(`ℹ️ Pas de restock: oldStock=${oldStock}, newStock=${newStock}`);
     }
 
     res.status(200).json({ success: true, message: 'Produit mis à jour', product });
