@@ -69,8 +69,13 @@ exports.notifyOnRestock = async (productId, productName) => {
       : productId;
 
     const subs = await StockNotification.find({ product: pid, notified: false });
-    console.log(`📦 Restock "${productName}": ${subs.length} abonné(s)`);
-    if (!subs.length) return;
+    console.log(`📦 notifyOnRestock "${productName}": ${subs.length} abonné(s)`);
+    if (!subs.length) {
+      const allSubs = await StockNotification.find({ product: pid });
+      console.log(`   (debug) Total abonnements pour ce produit: ${allSubs.length}`);
+      allSubs.forEach(s => console.log(`   - ${s.email} notified=${s.notified}`));
+      return;
+    }
 
     for (const sub of subs) {
       try {
