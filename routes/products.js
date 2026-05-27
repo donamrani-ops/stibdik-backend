@@ -7,6 +7,9 @@ const { protect, authorize } = require('../middleware/auth');
 // ─── Routes publiques ────────────────────────────────────────────────────────
 router.get('/',                   productController.getAllProducts);
 router.get('/trending',           productController.getTrending);
+router.get('/my',       protect,  productController.getMyProducts);
+
+// ─── Routes avec :id (APRÈS les routes statiques) ────────────────────────────
 router.get('/:id/similar',        productController.getSimilarProducts);
 router.get('/:id',                productController.getProduct);
 router.patch('/:id/views',        productController.incrementViews);
