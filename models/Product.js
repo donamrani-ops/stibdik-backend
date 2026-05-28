@@ -72,24 +72,20 @@ productSchema.statics.advancedSearch = async function(params) {
     if (mongoose.Types.ObjectId.isValid(category) && String(category).length === 24) {
       filter.category = new mongoose.Types.ObjectId(String(category));
     } else {
-      // C'est un slug → résoudre via cache ou requête DB
+      // C'est un slug → résoudre via Category model (cache en mémoire)
       if (_slugCache[category]) {
         filter.category = _slugCache[category];
       } else {
         try {
-          // Chercher dans la collection categories directement (sans passer par le model)
-          const db = mongoose.connection.db;
-          const cat = await db.collection('categories').findOne(
-            { slug: category },
-            { projection: { _id: 1 } }
-          );
+          const Category = require('./Category');
+          const cat = await Category.findOne({ slug: category }).select('_id').lean();
           if (cat) {
-            _slugCache[category] = cat._id;
+            _slugCache[category] = cat._id; // cache pour les prochains appels
             filter.category = cat._id;
           }
-          // Si slug inconnu → ne pas filtrer par catégorie
+          // slug inconnu → pas de filtre catégorie (retourne tous les produits actifs)
         } catch(e) {
-          // Accès DB échoué → ignorer le filtre catégorie silencieusement
+          console.warn('Category slug resolution (non-fatal):', e.message);
         }
       }
     }
