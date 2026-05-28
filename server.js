@@ -122,6 +122,7 @@ app.use('/api/coupons',     couponRoutes);
 app.use('/api/collections', collectionsRoutes);
 app.use('/api/audit',       auditRoutes);
 app.use('/api/tickets',           ticketRoutes);
+app.use('/api/config',            require('./routes/config'));
 app.use('/api/offers',            require('./routes/offers'));
 // Stock notifications — chargement conditionnel (fichier optionnel)
 try { app.use('/api/stock-notifications', require('./routes/stock-notification')); } catch(e) { console.warn('⚠️ stock-notifications non chargé:', e.message); }
