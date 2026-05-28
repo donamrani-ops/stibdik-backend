@@ -188,3 +188,58 @@ exports.sendRestockSubscriptionConfirmation = async (email, userName, productNam
     console.warn('Subscription confirmation email failed:', err.message);
   }
 };
+
+// Notification vendeur — nouvelle offre reçue
+exports.notifyVendorNewOffer = async (email, vendorName, buyerName, productName, offerPrice, originalPrice, offerId) => {
+  if (!process.env.SMTP_USER) return;
+  const discount = Math.round((1 - offerPrice/originalPrice)*100);
+  try {
+    await transporter.sendMail({
+      from: `"Stibdik" <${FROM_EMAIL}>`,
+      to: email,
+      subject: `💰 Nouvelle offre de ${buyerName} pour "${productName}"`,
+      html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+        <div style="background:#00796B;color:#fff;padding:20px;border-radius:8px 8px 0 0">
+          <h2 style="margin:0">💰 Nouvelle offre reçue</h2>
+        </div>
+        <div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0">
+          <p>Bonjour <strong>${vendorName}</strong>,</p>
+          <p><strong>${buyerName}</strong> a fait une offre pour <strong>"${productName}"</strong></p>
+          <div style="background:#fff;border:2px solid #00796B;border-radius:12px;padding:20px;margin:16px 0;text-align:center">
+            <div style="font-size:13px;color:#666;text-decoration:line-through">${originalPrice} DH</div>
+            <div style="font-size:32px;font-weight:900;color:#00796B">${offerPrice} DH</div>
+            <div style="font-size:12px;color:#FF9800;font-weight:700">-${discount}% de réduction</div>
+          </div>
+          <p>Connectez-vous pour accepter, refuser ou contre-offrir.</p>
+        </div>
+        <div style="text-align:center;font-size:11px;color:#9e9e9e;padding:12px">Stibdik — Marketplace Maroc</div>
+      </div>`
+    });
+  } catch(e) { console.warn('notifyVendorNewOffer failed:', e.message); }
+};
+
+// Notification acheteur — réponse à son offre
+exports.notifyBuyerOfferResponse = async (email, buyerName, productName, action, price, message) => {
+  if (!process.env.SMTP_USER) return;
+  const icons = { accept:'✅', decline:'❌', counter:'🔄' };
+  const labels = { accept:'acceptée', decline:'refusée', counter:'contre-offre reçue' };
+  try {
+    await transporter.sendMail({
+      from: `"Stibdik" <${FROM_EMAIL}>`,
+      to: email,
+      subject: `${icons[action]||'📩'} Votre offre pour "${productName}" a été ${labels[action]||'mise à jour'}`,
+      html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+        <div style="background:${action==='accept'?'#00796B':action==='decline'?'#f44336':'#FF9800'};color:#fff;padding:20px;border-radius:8px 8px 0 0">
+          <h2 style="margin:0">${icons[action]||'📩'} Offre ${labels[action]||'mise à jour'}</h2>
+        </div>
+        <div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0">
+          <p>Bonjour <strong>${buyerName}</strong>,</p>
+          ${action==='accept'?`<p>🎉 Le vendeur a <strong>accepté</strong> votre offre de <strong>${price} DH</strong> pour "${productName}". Finalisez votre achat !</p>`:''}
+          ${action==='decline'?`<p>Le vendeur a refusé votre offre pour "${productName}".</p>${message?`<p><em>"${message}"</em></p>`:''}`:''}
+          ${action==='counter'?`<p>Le vendeur vous propose <strong>${price} DH</strong> pour "${productName}". Connectez-vous pour accepter ou négocier.</p>${message?`<p><em>"${message}"</em></p>`:''}`:''}
+        </div>
+        <div style="text-align:center;font-size:11px;color:#9e9e9e;padding:12px">Stibdik — Marketplace Maroc</div>
+      </div>`
+    });
+  } catch(e) { console.warn('notifyBuyerOfferResponse failed:', e.message); }
+};
