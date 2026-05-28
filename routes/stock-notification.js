@@ -41,17 +41,17 @@ router.post('/restock-check', protect, async (req, res, next) => {
     const { productIds } = req.body;
     if (!Array.isArray(productIds) || productIds.length === 0)
       return res.json({ success: true, restocked: [] });
-    const Product           = require('../models/Product');
-    const StockNotification = require('../models/StockNotification');
+
+    const Product = require('../models/Product');
+
+    // Vérifier uniquement si les produits surveillés ont du stock
+    // NE PAS marquer notified ici — c'est notifyOnRestock (email) qui le fait
     const restocked = await Product.find({
-      _id: { $in: productIds }, stock: { $gt: 0 }, status: 'active'
+      _id:    { $in: productIds },
+      stock:  { $gt: 0 },
+      status: 'active'
     }).select('_id nameFr nameAr stock images').lean();
-    if (restocked.length > 0 && req.user?.email) {
-      await StockNotification.updateMany(
-        { product: { $in: restocked.map(p => p._id) }, email: req.user.email, notified: false },
-        { notified: true, notifiedAt: new Date() }
-      ).catch(() => {});
-    }
+
     res.json({ success: true, restocked });
   } catch (err) { next(err); }
 });
