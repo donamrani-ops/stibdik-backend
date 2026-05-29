@@ -31,13 +31,30 @@ exports.createOffer = async (req, res, next) => {
       history:    [{ price: Number(offerPrice), message: message||'', by: 'buyer' }]
     });
 
-    // Email au vendeur
+    // Email + Pusher au vendeur
     try {
       await emailService.notifyVendorNewOffer(
         product.vendor.email, product.vendor.name||product.vendor.shopName,
         req.user.name, product.nameFr||product.nameAr, offerPrice, product.price, offer._id
       );
     } catch(e) { console.warn('Offer email failed:', e.message); }
+
+    // Pusher — notif temps réel vendeur
+    try {
+      const pusher = require('../services/pusherService');
+      pusher.trigger(`user-${product.vendor._id}`, 'offer-received', {
+        type: 'offer_received',
+        icon: '💰',
+        title: `Offre de ${req.user.name}`,
+        message: `${req.user.name} vous propose ${offerPrice} DH pour "${product.nameFr||product.nameAr}"`,
+        offerId: offer._id,
+        productId: product._id,
+        productName: product.nameFr||product.nameAr,
+        productImage: (product.images?.find(i=>i.isMain)||product.images?.[0])?.url||'',
+        offerPrice,
+        originalPrice: product.price,
+      });
+    } catch(e) { console.warn('Pusher offer-received failed:', e.message); }
 
     res.status(201).json({ success:true, message:'Offre envoyée !', offer });
   } catch(err) { next(err); }
@@ -98,13 +115,35 @@ exports.respondToOffer = async (req, res, next) => {
     offer.isUnreadByVendor = false;
     await offer.save();
 
-    // Email à l'acheteur
+    // Email + Pusher à l'acheteur
     try {
       await emailService.notifyBuyerOfferResponse(
         offer.buyer.email, offer.buyer.name,
         offer.productSnapshot?.nameFr||'Produit', action, counterPrice||offer.offerPrice, counterMessage
       );
     } catch(e) { console.warn('Offer response email failed:', e.message); }
+
+    // Pusher — notif temps réel acheteur
+    try {
+      const pusher = require('../services/pusherService');
+      const icons = { accept:'✅', decline:'❌', counter:'🔄' };
+      const labels = { accept:'Offre acceptée !', decline:'Offre refusée', counter:'Contre-offre reçue' };
+      pusher.trigger(`user-${offer.buyer._id}`, 'offer-response', {
+        type: `offer_${action}`,
+        icon: icons[action]||'💰',
+        title: labels[action]||'Mise à jour offre',
+        message: action==='accept'
+          ? `Votre offre a été acceptée ! Finalisez l'achat.`
+          : action==='counter'
+          ? `Contre-offre : ${counterPrice} DH pour "${offer.productSnapshot?.nameFr||'Produit'}"`
+          : `Votre offre pour "${offer.productSnapshot?.nameFr||'Produit'}" a été refusée.`,
+        offerId: offer._id,
+        productName: offer.productSnapshot?.nameFr||'Produit',
+        productImage: offer.productSnapshot?.image||'',
+        action,
+        price: counterPrice||offer.offerPrice,
+      });
+    } catch(e) { console.warn('Pusher offer-response failed:', e.message); }
 
     res.json({ success:true, message:'Réponse envoyée', offer });
   } catch(err) { next(err); }
