@@ -1,36 +1,21 @@
-// ═══════════════════════════════════════════════════════════
-//  CONTROLLER: AUTHENTICATION
-//  Register, Login, Google OAuth, Password reset, Email verification
-// ═══════════════════════════════════════════════════════════
-
-const User = require('../models/User');
-const { generateToken, generateRefreshToken } = require('../middleware/auth');
 const crypto = require('crypto');
+const User   = require('../models/User');
+const { generateToken, generateRefreshToken } = require('../middleware/auth');
+const emailService = require('../services/emailService');
 
-// @desc    Register new user
-// @route   POST /api/auth/register
-// @access  Public
+// ── POST /api/auth/register ───────────────────────────────────────────────────
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password, role, phone } = req.body;
+    const { name, email, password, role, phone, shopName } = req.body;
 
     const existingUser = await User.findByEmail(email);
     if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cet email est déjà utilisé'
-      });
+      return res.status(400).json({ success: false, message: 'Cet email est déjà utilisé' });
     }
 
-    const user = await User.create({
-      name,
-      email,
-      password,
-      role: role || 'customer',
-      phone
-    });
+    const user = await User.create({ name, email, password, role: role || 'customer', phone, shopName });
 
-    const token = generateToken(user._id);
+    const token        = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
     res.status(201).json({
@@ -40,24 +25,18 @@ exports.register = async (req, res, next) => {
       refreshToken,
       user: user.getPublicProfile()
     });
-
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
+// ── POST /api/auth/login ──────────────────────────────────────────────────────
 exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email et mot de passe requis'
-      });
+      return res.status(400).json({ success: false, message: 'Email et mot de passe requis' });
     }
 
     const user = await User.findOne({ email }).select('+password');
@@ -78,11 +57,11 @@ exports.login = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Votre compte est suspendu' });
     }
 
-    user.lastLogin = new Date();
+    user.lastLogin  = new Date();
     user.loginCount += 1;
     await user.save({ validateBeforeSave: false });
 
-    const token = generateToken(user._id);
+    const token        = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
     res.status(200).json({
@@ -92,110 +71,17 @@ exports.login = async (req, res, next) => {
       refreshToken,
       user: user.getPublicProfile()
     });
-
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Google OAuth login / register
-// @route   POST /api/auth/google
-// @access  Public
-exports.googleAuth = async (req, res, next) => {
-  try {
-    const { credential } = req.body;
-
-    if (!credential) {
-      return res.status(400).json({ success: false, message: 'Token Google manquant' });
-    }
-
-    // Vérifier le token Google (sans dépendance externe)
-    // Le token JWT Google est signé par Google — on décode le payload sans vérifier la signature ici
-    // (la vérification complète nécessiterait google-auth-library)
-    const parts = credential.split('.');
-    if (parts.length !== 3) {
-      return res.status(400).json({ success: false, message: 'Token Google invalide' });
-    }
-
-    // Décoder le payload base64url
-    const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const payloadJson = Buffer.from(payloadBase64, 'base64').toString('utf8');
-    const payload = JSON.parse(payloadJson);
-
-    const { email, name, picture, sub: googleId, exp } = payload;
-
-    // Vérifier expiration
-    if (!exp || Date.now() / 1000 > exp) {
-      return res.status(401).json({ success: false, message: 'Token Google expiré' });
-    }
-
-    if (!email) {
-      return res.status(400).json({ success: false, message: 'Email Google manquant' });
-    }
-
-    // Chercher user existant par email ou googleId
-    let user = await User.findOne({ $or: [{ email }, { googleId }] });
-
-    if (user) {
-      // Mettre à jour googleId si pas encore lié
-      if (!user.googleId) {
-        user.googleId = googleId;
-        if (picture && !user.avatar) user.avatar = picture;
-        await user.save({ validateBeforeSave: false });
-      }
-
-      if (user.status === 'banned') {
-        return res.status(403).json({ success: false, message: 'Votre compte a été banni' });
-      }
-
-      user.lastLogin = new Date();
-      user.loginCount = (user.loginCount || 0) + 1;
-      await user.save({ validateBeforeSave: false });
-
-    } else {
-      // Créer nouveau compte
-      user = await User.create({
-        name: name || email.split('@')[0],
-        email,
-        googleId,
-        avatar: picture || '',
-        role: 'customer',
-        isEmailVerified: true, // Email Google = déjà vérifié
-        password: crypto.randomBytes(32).toString('hex'), // Password aléatoire (non utilisé)
-      });
-    }
-
-    const token = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-
-    res.status(200).json({
-      success: true,
-      message: user.loginCount <= 1 ? 'Compte créé avec Google' : 'Connexion réussie',
-      token,
-      refreshToken,
-      user: user.getPublicProfile()
-    });
-
-  } catch (error) {
-    console.error('Google auth error:', error.message);
-    next(error);
-  }
+// ── POST /api/auth/logout ─────────────────────────────────────────────────────
+exports.logout = async (req, res) => {
+  res.status(200).json({ success: true, message: 'Déconnexion réussie' });
 };
 
-// @desc    Logout user
-// @route   POST /api/auth/logout
-// @access  Private
-exports.logout = async (req, res, next) => {
-  try {
-    res.status(200).json({ success: true, message: 'Déconnexion réussie' });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get current user
-// @route   GET /api/auth/me
-// @access  Private
+// ── GET /api/auth/me ──────────────────────────────────────────────────────────
 exports.getMe = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
@@ -205,158 +91,102 @@ exports.getMe = async (req, res, next) => {
   }
 };
 
-// @desc    Forgot password
-// @route   POST /api/auth/forgot-password
-// @access  Public
-exports.forgotPassword = async (req, res, next) => {
+// ── POST /api/auth/google ─────────────────────────────────────────────────────
+exports.googleLogin = async (req, res, next) => {
+  try {
+    const { credential } = req.body;
+    if (!credential) return res.status(400).json({ message: 'Credential manquant' });
+
+    const { OAuth2Client } = require('google-auth-library');
+    const client  = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket  = await client.verifyIdToken({ idToken: credential, audience: process.env.GOOGLE_CLIENT_ID });
+    const payload = ticket.getPayload();
+
+    let user = await User.findOne({ email: payload.email });
+    if (!user) {
+      user = await User.create({
+        name:            payload.name,
+        email:           payload.email,
+        password:        crypto.randomBytes(20).toString('hex'),
+        role:            'customer',
+        isEmailVerified: true,
+        avatar:          payload.picture || null
+      });
+    }
+
+    const token        = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    res.status(200).json({ success: true, token, refreshToken, user: user.getPublicProfile() });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── POST /api/auth/forgot-password ───────────────────────────────────────────
+exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findByEmail(email);
+    if (!email) return res.status(400).json({ message: 'Email requis' });
 
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Aucun utilisateur avec cet email' });
-    }
+    // Réponse générique (sécurité anti-énumération d'emails)
+    const GENERIC_OK = { message: 'Si cet email existe, un lien de réinitialisation a été envoyé.' };
 
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    user.passwordResetExpires = Date.now() + 3600000;
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) return res.json(GENERIC_OK);
+
+    // Générer un token sécurisé (64 chars hex)
+    const token   = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 heure
+
+    user.resetPasswordToken   = token;
+    user.resetPasswordExpires = expires;
     await user.save({ validateBeforeSave: false });
 
-    res.status(200).json({
-      success: true,
-      message: 'Email de réinitialisation envoyé',
-      resetToken // À retirer en production
-    });
+    // URL de reset pointant vers le frontend
+    const resetUrl = `https://stibdik.pages.dev/?reset=${token}`;
 
-  } catch (error) {
-    next(error);
+    // Envoyer l'email
+    await emailService.sendResetPassword(user, resetUrl);
+
+    res.json(GENERIC_OK);
+  } catch (err) {
+    console.error('forgotPassword error:', err);
+    res.status(500).json({ message: 'Erreur serveur' });
   }
 };
 
-// @desc    Reset password
-// @route   POST /api/auth/reset-password/:token
-// @access  Public
-exports.resetPassword = async (req, res, next) => {
+// ── POST /api/auth/reset-password ────────────────────────────────────────────
+exports.resetPassword = async (req, res) => {
   try {
-    const { token } = req.params;
-    const { password } = req.body;
+    const { token, password } = req.body;
 
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    if (!token || !password) {
+      return res.status(400).json({ message: 'Token et mot de passe requis' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Mot de passe trop court (minimum 6 caractères)' });
+    }
 
+    // Trouver le user avec ce token non expiré
     const user = await User.findOne({
-      passwordResetToken: hashedToken,
-      passwordResetExpires: { $gt: Date.now() }
+      resetPasswordToken:   token,
+      resetPasswordExpires: { $gt: new Date() }
     });
 
     if (!user) {
-      return res.status(400).json({ success: false, message: 'Token invalide ou expiré' });
+      return res.status(400).json({ message: 'Lien invalide ou expiré' });
     }
 
-    user.password = password;
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
+    // Mettre à jour le mot de passe (le pre-save hook s'occupe du hachage)
+    user.password             = password;
+    user.resetPasswordToken   = undefined;
+    user.resetPasswordExpires = undefined;
     await user.save();
 
-    const authToken = generateToken(user._id);
-    res.status(200).json({ success: true, message: 'Mot de passe réinitialisé', token: authToken });
-
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Verify email
-// @route   POST /api/auth/verify-email/:token
-// @access  Public
-exports.verifyEmail = async (req, res, next) => {
-  try {
-    const { token } = req.params;
-
-    const user = await User.findOne({
-      emailVerificationToken: token,
-      emailVerificationExpires: { $gt: Date.now() }
-    });
-
-    if (!user) {
-      return res.status(400).json({ success: false, message: 'Token invalide ou expiré' });
-    }
-
-    user.isEmailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
-    await user.save();
-
-    res.status(200).json({ success: true, message: 'Email vérifié avec succès' });
-
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Resend verification email
-// @route   POST /api/auth/resend-verification
-// @access  Private
-exports.resendVerification = async (req, res, next) => {
-  try {
-    const user = req.user;
-
-    if (user.isEmailVerified) {
-      return res.status(400).json({ success: false, message: 'Email déjà vérifié' });
-    }
-
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    user.emailVerificationToken = verificationToken;
-    user.emailVerificationExpires = Date.now() + 86400000;
-    await user.save({ validateBeforeSave: false });
-
-    res.status(200).json({ success: true, message: 'Email de vérification renvoyé' });
-
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Refresh access token
-// @route   POST /api/auth/refresh-token
-// @access  Public
-exports.refreshToken = async (req, res, next) => {
-  try {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      return res.status(400).json({ success: false, message: 'Refresh token requis' });
-    }
-
-    const jwt = require('jsonwebtoken');
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const newToken = generateToken(decoded.id);
-
-    res.status(200).json({ success: true, token: newToken });
-
-  } catch (error) {
-    return res.status(401).json({ success: false, message: 'Refresh token invalide' });
-  }
-};
-
-// @desc    Change password
-// @route   PUT /api/auth/change-password
-// @access  Private
-exports.changePassword = async (req, res, next) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    const user = await User.findById(req.user._id).select('+password');
-
-    const isMatch = await user.comparePassword(currentPassword);
-    if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
-    }
-
-    user.password = newPassword;
-    await user.save();
-
-    res.status(200).json({ success: true, message: 'Mot de passe changé avec succès' });
-
-  } catch (error) {
-    next(error);
+    res.json({ message: 'Mot de passe réinitialisé avec succès' });
+  } catch (err) {
+    console.error('resetPassword error:', err);
+    res.status(500).json({ message: 'Erreur serveur' });
   }
 };
