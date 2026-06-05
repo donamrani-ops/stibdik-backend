@@ -99,13 +99,16 @@ exports.googleLogin = async (req, res, next) => {
 
     const { OAuth2Client } = require('google-auth-library');
     const client  = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-    const ticket  = await client.verifyIdToken({ idToken: credential, audience: process.env.GOOGLE_CLIENT_ID });
+    const ticket  = await client.verifyIdToken({
+      idToken:  credential,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
     const payload = ticket.getPayload();
 
     let user = await User.findOne({ email: payload.email });
     if (!user) {
       user = await User.create({
-        name:            payload.name,
+        name:            payload.name || payload.email.split('@')[0],
         email:           payload.email,
         password:        crypto.randomBytes(20).toString('hex'),
         role:            'customer',
@@ -129,24 +132,19 @@ exports.forgotPassword = async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: 'Email requis' });
 
-    // Réponse générique (sécurité anti-énumération d'emails)
     const GENERIC_OK = { message: 'Si cet email existe, un lien de réinitialisation a été envoyé.' };
 
     const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return res.json(GENERIC_OK);
 
-    // Générer un token sécurisé (64 chars hex)
     const token   = crypto.randomBytes(32).toString('hex');
-    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 heure
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1h
 
     user.resetPasswordToken   = token;
     user.resetPasswordExpires = expires;
     await user.save({ validateBeforeSave: false });
 
-    // URL de reset pointant vers le frontend
     const resetUrl = `https://stibdik.pages.dev/?reset=${token}`;
-
-    // Envoyer l'email
     await emailService.sendResetPassword(user, resetUrl);
 
     res.json(GENERIC_OK);
@@ -168,7 +166,6 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'Mot de passe trop court (minimum 6 caractères)' });
     }
 
-    // Trouver le user avec ce token non expiré
     const user = await User.findOne({
       resetPasswordToken:   token,
       resetPasswordExpires: { $gt: new Date() }
@@ -178,7 +175,6 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'Lien invalide ou expiré' });
     }
 
-    // Mettre à jour le mot de passe (le pre-save hook s'occupe du hachage)
     user.password             = password;
     user.resetPasswordToken   = undefined;
     user.resetPasswordExpires = undefined;
