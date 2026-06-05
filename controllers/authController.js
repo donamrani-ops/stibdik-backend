@@ -1,5 +1,4 @@
 const crypto = require('crypto');
-const jwt    = require('jsonwebtoken');
 const User   = require('../models/User');
 const { generateToken, generateRefreshToken } = require('../middleware/auth');
 const emailService = require('../services/emailService');
@@ -101,27 +100,23 @@ exports.googleLogin = async (req, res, next) => {
     const { credential } = req.body;
     if (!credential) return res.status(400).json({ message: 'Credential manquant' });
 
-    // Décoder le JWT Google sans vérification de signature (la clé publique Google)
-    // Le frontend a déjà vérifié côté GSI — on fait confiance au token signé par Google
-    const decoded = jwt.decode(credential);
-    if (!decoded || !decoded.email) {
-      return res.status(401).json({ message: 'Token Google invalide' });
-    }
+    const { OAuth2Client } = require('google-auth-library');
+    const client  = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket  = await client.verifyIdToken({
+      idToken:  credential,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+    const payload = ticket.getPayload();
 
-    // Vérifier que le token n'est pas expiré
-    if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
-      return res.status(401).json({ message: 'Token Google expiré' });
-    }
-
-    let user = await User.findOne({ email: decoded.email });
+    let user = await User.findOne({ email: payload.email });
     if (!user) {
       user = await User.create({
-        name:            decoded.name || decoded.email.split('@')[0],
-        email:           decoded.email,
+        name:            payload.name || payload.email.split('@')[0],
+        email:           payload.email,
         password:        crypto.randomBytes(20).toString('hex'),
         role:            'customer',
         isEmailVerified: true,
-        avatar:          decoded.picture || null
+        avatar:          payload.picture || null
       });
     }
 
