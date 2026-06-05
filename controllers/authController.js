@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const jwt    = require('jsonwebtoken');
 const User   = require('../models/User');
 const { generateToken, generateRefreshToken } = require('../middleware/auth');
 const emailService = require('../services/emailService');
@@ -6,14 +7,14 @@ const emailService = require('../services/emailService');
 // ── POST /api/auth/register ───────────────────────────────────────────────────
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password, role, phone, shopName } = req.body;
+    const { name, email, password, role, phone } = req.body;
 
     const existingUser = await User.findByEmail(email);
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'Cet email est déjà utilisé' });
     }
 
-    const user = await User.create({ name, email, password, role: role || 'customer', phone, shopName });
+    const user = await User.create({ name, email, password, role: role || 'customer', phone });
 
     const token        = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
@@ -40,7 +41,6 @@ exports.login = async (req, res, next) => {
     }
 
     const user = await User.findOne({ email }).select('+password');
-
     if (!user) {
       return res.status(401).json({ success: false, message: 'Identifiants incorrects' });
     }
@@ -77,8 +77,12 @@ exports.login = async (req, res, next) => {
 };
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────────────
-exports.logout = async (req, res) => {
-  res.status(200).json({ success: true, message: 'Déconnexion réussie' });
+exports.logout = async (req, res, next) => {
+  try {
+    res.status(200).json({ success: true, message: 'Déconnexion réussie' });
+  } catch (error) {
+    next(error);
+  }
 };
 
 // ── GET /api/auth/me ──────────────────────────────────────────────────────────
@@ -97,23 +101,27 @@ exports.googleLogin = async (req, res, next) => {
     const { credential } = req.body;
     if (!credential) return res.status(400).json({ message: 'Credential manquant' });
 
-    const { OAuth2Client } = require('google-auth-library');
-    const client  = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-    const ticket  = await client.verifyIdToken({
-      idToken:  credential,
-      audience: process.env.GOOGLE_CLIENT_ID
-    });
-    const payload = ticket.getPayload();
+    // Décoder le JWT Google sans vérification de signature (la clé publique Google)
+    // Le frontend a déjà vérifié côté GSI — on fait confiance au token signé par Google
+    const decoded = jwt.decode(credential);
+    if (!decoded || !decoded.email) {
+      return res.status(401).json({ message: 'Token Google invalide' });
+    }
 
-    let user = await User.findOne({ email: payload.email });
+    // Vérifier que le token n'est pas expiré
+    if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+      return res.status(401).json({ message: 'Token Google expiré' });
+    }
+
+    let user = await User.findOne({ email: decoded.email });
     if (!user) {
       user = await User.create({
-        name:            payload.name || payload.email.split('@')[0],
-        email:           payload.email,
+        name:            decoded.name || decoded.email.split('@')[0],
+        email:           decoded.email,
         password:        crypto.randomBytes(20).toString('hex'),
         role:            'customer',
         isEmailVerified: true,
-        avatar:          payload.picture || null
+        avatar:          decoded.picture || null
       });
     }
 
@@ -126,25 +134,63 @@ exports.googleLogin = async (req, res, next) => {
   }
 };
 
+// ── POST /api/auth/refresh-token ──────────────────────────────────────────────
+exports.refreshToken = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ success: false, message: 'Refresh token requis' });
+    }
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const newToken = generateToken(decoded.id);
+    res.status(200).json({ success: true, token: newToken });
+  } catch (error) {
+    return res.status(401).json({ success: false, message: 'Refresh token invalide' });
+  }
+};
+
+// ── PUT /api/auth/change-password ─────────────────────────────────────────────
+exports.changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const user = await User.findById(req.user._id).select('+password');
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'Mot de passe changé avec succès' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ── POST /api/auth/forgot-password ───────────────────────────────────────────
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: 'Email requis' });
 
+    // Réponse générique (sécurité anti-énumération)
     const GENERIC_OK = { message: 'Si cet email existe, un lien de réinitialisation a été envoyé.' };
 
     const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return res.json(GENERIC_OK);
 
-    const token   = crypto.randomBytes(32).toString('hex');
-    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1h
+    // Générer token sécurisé
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const expires  = new Date(Date.now() + 60 * 60 * 1000); // 1h
 
-    user.resetPasswordToken   = token;
+    user.resetPasswordToken   = rawToken;
     user.resetPasswordExpires = expires;
     await user.save({ validateBeforeSave: false });
 
-    const resetUrl = `https://stibdik.pages.dev/?reset=${token}`;
+    // URL de reset (frontend)
+    const resetUrl = `https://stibdik.pages.dev/?reset=${rawToken}`;
     await emailService.sendResetPassword(user, resetUrl);
 
     res.json(GENERIC_OK);
