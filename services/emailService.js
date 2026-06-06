@@ -102,7 +102,6 @@ exports.sendResetPassword = async (user, resetUrl) => {
             <h1 style="color:#fff;margin:0;font-size:26px;font-weight:900">Stibdik</h1>
             <p style="color:rgba(255,255,255,.85);margin:6px 0 0;font-size:13px">Marketplace Maroc</p>
           </div>
-
           <div style="background:#fff;padding:32px 24px;border:1px solid #e8ecef;border-top:none">
             <h2 style="font-size:20px;font-weight:800;color:#1a1d23;margin:0 0 8px">
               🔑 Réinitialisation du mot de passe
@@ -112,7 +111,6 @@ exports.sendResetPassword = async (user, resetUrl) => {
               Vous avez demandé à réinitialiser votre mot de passe Stibdik.
               Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe.
             </p>
-
             <div style="text-align:center;margin:32px 0">
               <a href="${resetUrl}"
                  style="display:inline-block;background:linear-gradient(135deg,#00796B,#4CAF50);
@@ -121,17 +119,81 @@ exports.sendResetPassword = async (user, resetUrl) => {
                 🔑 Réinitialiser mon mot de passe →
               </a>
             </div>
-
             <p style="color:#9e9e9e;font-size:12px;line-height:1.6;margin:24px 0 0;
                        padding:16px;background:#f9f9f9;border-radius:8px;border-left:4px solid #FF9800">
               ⚠️ Ce lien expire dans <strong>1 heure</strong>.<br>
               Si vous n'avez pas demandé cette réinitialisation, ignorez cet email —
               votre mot de passe reste inchangé.
             </p>
-
             <p style="color:#bbb;font-size:11px;margin:16px 0 0">
               Ou copiez ce lien dans votre navigateur :<br>
               <a href="${resetUrl}" style="color:#00796B;word-break:break-all">${resetUrl}</a>
+            </p>
+          </div>
+          <div style="text-align:center;font-size:11px;color:#9e9e9e;padding:16px">
+            Stibdik — Marketplace Maroc ·
+            <a href="https://stibdik.pages.dev" style="color:#9e9e9e">stibdik.pages.dev</a>
+          </div>
+        </div>
+      `
+    });
+  } catch (err) {
+    console.warn('sendResetPassword email failed:', err.message);
+  }
+};
+
+// ── Email au vendeur quand une nouvelle offre est reçue ───────────────────────
+exports.notifyVendorNewOffer = async (vendorEmail, vendorName, buyerName, productName, offerPrice, originalPrice, offerId) => {
+  if (!process.env.SMTP_USER) return;
+  const discount = originalPrice ? Math.round(100 * (1 - offerPrice / originalPrice)) : 0;
+  try {
+    await transporter.sendMail({
+      from:    `"Stibdik" <${FROM_EMAIL}>`,
+      to:      vendorEmail,
+      subject: `💰 Nouvelle offre reçue — ${productName}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:600px;margin:0 auto;background:#f5f7f8">
+          <div style="background:linear-gradient(135deg,#00796B,#4CAF50);padding:32px 24px;border-radius:12px 12px 0 0;text-align:center">
+            <h1 style="color:#fff;margin:0;font-size:26px;font-weight:900">Stibdik</h1>
+            <p style="color:rgba(255,255,255,.85);margin:6px 0 0;font-size:13px">Marketplace Maroc</p>
+          </div>
+
+          <div style="background:#fff;padding:32px 24px;border:1px solid #e8ecef;border-top:none">
+            <h2 style="font-size:20px;font-weight:800;color:#1a1d23;margin:0 0 8px">
+              💰 Nouvelle offre reçue !
+            </h2>
+            <p style="color:#555;font-size:14px;line-height:1.6;margin:0 0 24px">
+              Bonjour <strong>${vendorName}</strong>,<br><br>
+              <strong>${buyerName}</strong> vous a envoyé une offre pour votre produit.
+            </p>
+
+            <div style="background:#f9f9f9;border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #e8ecef">
+              <div style="font-size:13px;color:#666;margin-bottom:8px">Produit</div>
+              <div style="font-size:16px;font-weight:800;color:#1a1d23;margin-bottom:16px">${productName}</div>
+              <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <div style="flex:1;text-align:center;background:#fff;border-radius:8px;padding:12px;border:1px solid #e0e0e0">
+                  <div style="font-size:11px;color:#9e9e9e;margin-bottom:4px">Prix original</div>
+                  <div style="font-size:20px;font-weight:900;color:#9e9e9e;text-decoration:line-through">${originalPrice} DH</div>
+                </div>
+                <div style="flex:1;text-align:center;background:#e8f5e9;border-radius:8px;padding:12px;border:1px solid #c8e6c9">
+                  <div style="font-size:11px;color:#2e7d32;margin-bottom:4px">Offre proposée</div>
+                  <div style="font-size:24px;font-weight:900;color:#00796B">${offerPrice} DH</div>
+                  ${discount > 0 ? `<div style="font-size:11px;color:#FF9800;font-weight:700">-${discount}%</div>` : ''}
+                </div>
+              </div>
+            </div>
+
+            <div style="text-align:center;margin:24px 0">
+              <a href="https://stibdik.pages.dev"
+                 style="display:inline-block;background:linear-gradient(135deg,#00796B,#4CAF50);
+                        color:#fff;padding:14px 28px;border-radius:50px;text-decoration:none;
+                        font-size:14px;font-weight:800;box-shadow:0 4px 16px rgba(0,121,107,.3)">
+                Voir et répondre à l'offre →
+              </a>
+            </div>
+
+            <p style="color:#9e9e9e;font-size:12px;text-align:center;margin:0">
+              Répondez vite — les acheteurs sont souvent impatients ! ⚡
             </p>
           </div>
 
@@ -143,6 +205,6 @@ exports.sendResetPassword = async (user, resetUrl) => {
       `
     });
   } catch (err) {
-    console.warn('sendResetPassword email failed:', err.message);
+    console.warn('notifyVendorNewOffer email failed:', err.message);
   }
 };
