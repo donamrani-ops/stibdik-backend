@@ -66,6 +66,12 @@ const userSchema = new mongoose.Schema({
   // ── Avatar ────────────────────────────────────────────────────────────────
   avatar: { type: String, default: null },
 
+  // ── Wishlist ──────────────────────────────────────────────────────────────
+  wishlist: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref:  'Product'
+  }],
+
   // ── Adresses ──────────────────────────────────────────────────────────────
   addresses: [{
     label:      { type: String, default: 'Maison' },
@@ -127,12 +133,16 @@ userSchema.methods.getPublicProfile = function() {
     id:              this._id,
     name:            this.name,
     email:           this.email,
+    phone:           this.phone,
     role:            this.role,
+    status:          this.status,
+    isVerified:      this.isEmailVerified,
     avatar:          this.avatar || this.getInitials(),
     shopName:        this.shopName,
     shopDescription: this.shopDescription,
     shopLogo:        this.shopLogo,
     stats:           this.role === 'vendor' ? this.stats : undefined,
+    addresses:       this.addresses,
     createdAt:       this.createdAt
   };
 };
