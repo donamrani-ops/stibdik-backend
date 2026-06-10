@@ -55,6 +55,7 @@ const userSchema = new mongoose.Schema({
 
   // ── Vérifications ─────────────────────────────────────────────────────────
   isEmailVerified:          { type: Boolean, default: false },
+  facebookId:               { type: String, default: undefined },
   isPhoneVerified:          { type: Boolean, default: false },
   emailVerificationToken:   String,
   emailVerificationExpires: Date,
