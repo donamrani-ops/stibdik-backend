@@ -227,3 +227,52 @@ exports.resetPassword = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 };
+
+// ── POST /api/auth/facebook ───────────────────────────────────────────────────
+exports.facebookLogin = async (req, res, next) => {
+  try {
+    const { accessToken, userID, name, email, picture } = req.body;
+    if (!accessToken || !userID) {
+      return res.status(400).json({ message: 'Token Facebook manquant' });
+    }
+
+    // Vérifier le token auprès de l'API Graph Facebook
+    const verifyUrl = `https://graph.facebook.com/me?fields=id,name,email&access_token=${accessToken}`;
+    const fbResponse = await fetch(verifyUrl);
+    const fbData = await fbResponse.json();
+
+    if (!fbResponse.ok || fbData.error || fbData.id !== userID) {
+      return res.status(401).json({ message: 'Token Facebook invalide' });
+    }
+
+    const facebookId = fbData.id;
+    const fbEmail    = fbData.email || email;
+    const fbName     = fbData.name  || name || 'Utilisateur Facebook';
+
+    // Chercher par email puis par facebookId
+    let user = fbEmail ? await User.findOne({ email: fbEmail }) : null;
+    if (!user) user = await User.findOne({ facebookId });
+
+    if (!user) {
+      user = await User.create({
+        name:            fbName,
+        email:           fbEmail || (`${facebookId}@facebook.com`),
+        password:        require('crypto').randomBytes(20).toString('hex'),
+        role:            'customer',
+        isEmailVerified: !!fbEmail,
+        facebookId,
+        avatar:          picture || null,
+      });
+    } else if (!user.facebookId) {
+      user.facebookId = facebookId;
+      await user.save({ validateBeforeSave: false });
+    }
+
+    const token        = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    res.status(200).json({ success: true, token, refreshToken, user: user.getPublicProfile() });
+  } catch (error) {
+    next(error);
+  }
+};
