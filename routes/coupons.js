@@ -7,6 +7,7 @@ const { protect, authorize } = require('../middleware/auth');
 // Routes fixes avant /:id
 router.get('/validate',           protect,                   cc.validateCoupon);
 router.post('/apply',             protect,                   cc.applyCoupon);
+router.get('/my',                 protect,                   cc.getMyCoupons);
 
 // Admin
 router.get('/admin',              protect, authorize('admin'), cc.adminGetAll);
