@@ -111,3 +111,48 @@ exports.adminGetUsages = async (req, res, next) => {
     res.json({ success: true, usages });
   } catch (error) { next(error); }
 };
+
+// ─── GET /api/coupons/my ─────────────────────────────────────────────────────
+// Retourne les coupons disponibles pour l'utilisateur connecté
+exports.getMyCoupons = async (req, res, next) => {
+  try {
+    const now = new Date();
+
+    // Coupons publics actifs (non expirés, encore valides)
+    const publicCoupons = await Coupon.find({
+      isActive: true,
+      startsAt:  { $lte: now },
+      $or: [{ expiresAt: null }, { expiresAt: { $gte: now } }],
+    }).lean();
+
+    // Usages de l'utilisateur (pour savoir lesquels sont déjà utilisés)
+    const usages = await CouponUsage.find({ user: req.user._id }).lean();
+    const usageCount = {};
+    usages.forEach(u => {
+      const id = String(u.coupon);
+      usageCount[id] = (usageCount[id] || 0) + 1;
+    });
+
+    // Construire la liste avec statut
+    const coupons = publicCoupons.map(c => {
+      const used  = (usageCount[String(c._id)] || 0) >= (c.maxUsesPerUser || 1);
+      const expired = c.expiresAt && new Date(c.expiresAt) < now;
+      return {
+        id:          c._id,
+        code:        c.code,
+        description: c.description || '',
+        value:       c.discountValue,
+        valueType:   c.discountType === 'percentage' ? 'percent' : 'fixed',
+        minOrder:    c.minOrderAmount || 0,
+        expiresAt:   c.expiresAt,
+        status:      expired ? 'expired' : used ? 'used' : 'available',
+      };
+    });
+
+    // Trier: disponibles d'abord, puis utilisés, puis expirés
+    const order = { available: 0, used: 1, expired: 2 };
+    coupons.sort((a, b) => order[a.status] - order[b.status]);
+
+    res.json({ success: true, coupons });
+  } catch (error) { next(error); }
+};
