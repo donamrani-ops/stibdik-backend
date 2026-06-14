@@ -29,6 +29,8 @@ const couponRoutes      = require('./routes/coupons');
 const collectionsRoutes = require('./routes/collections');
 const auditRoutes       = require('./routes/audit');
 const ticketRoutes      = require('./routes/tickets');
+const referralRoutes = require('./routes/referral');
+
 
 // ── Middleware ───────────────────────────────────────────
 const { errorHandler } = require('./middleware/errorHandler');
@@ -125,6 +127,7 @@ app.use('/api/tickets',           ticketRoutes);
 app.use('/api/chat',              require('./routes/chat'));
 app.use('/api/config',            require('./routes/config'));
 app.use('/api/offers',            require('./routes/offers'));
+app.use('/api/referral', referralRoutes);
 // Stock notifications — chargement conditionnel (fichier optionnel)
 try { app.use('/api/stock-notifications', require('./routes/stock-notification')); } catch(e) { console.warn('⚠️ stock-notifications non chargé:', e.message); }
 
