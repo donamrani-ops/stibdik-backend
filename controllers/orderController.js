@@ -68,6 +68,17 @@ exports.createOrder = async (req, res, next) => {
       await productDoc.save();
     }
 
+    // Notification push au vendeur (nouvelle vente)
+    try {
+      const pushService = require('../services/pushService');
+      pushService.sendToUser(productDoc.vendor, {
+        title: '🎉 Nouvelle vente !',
+        body: `${productDoc.name || 'Votre article'} a ete commande (${quantity}x)`,
+        url: '/?page=orders',
+        tag: `order-${order._id}`,
+      }, 'sale').catch(() => {});
+    } catch(e) { /* Push optionnel */ }
+
     res.status(201).json({ success: true, message: 'Commande créée', order });
   } catch (error) { next(error); }
 };
