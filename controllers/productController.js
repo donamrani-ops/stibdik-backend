@@ -101,6 +101,7 @@ exports.updateProduct = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Non autorisé' });
 
     const oldStock = Number(product.stock);
+    const oldPrice = Number(product.price);
     console.log(`📦 updateProduct: "${product.nameFr}" — oldStock=${oldStock}, req.body.stock=${req.body.stock}`);
     product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
     const newStock = Number(product.stock);
@@ -114,6 +115,29 @@ exports.updateProduct = async (req, res, next) => {
     } else {
       console.log(`ℹ️ Pas de restock: oldStock=${oldStock}, newStock=${newStock}`);
     }
+
+    // Notification push : baisse de prix (>= 10%) aux utilisateurs ayant ce produit en favori
+    try {
+      const newPrice = Number(product.price);
+      if (oldPrice > 0 && newPrice > 0 && newPrice < oldPrice) {
+        const dropPct = Math.round((1 - newPrice / oldPrice) * 100);
+        if (dropPct >= 10) {
+          const User = require('../models/User');
+          const pushService = require('../services/pushService');
+          const name = product.nameFr || product.nameAr || 'Un article';
+          // Trouver les utilisateurs ayant ce produit en favori
+          const fans = await User.find({ wishlist: product._id }).select('_id').lean();
+          fans.forEach(u => {
+            pushService.sendToUser(u._id, {
+              title: `📉 -${dropPct}% sur un favori !`,
+              body: `${name} est passé à ${newPrice} DH`,
+              url: `/?product=${product._id}`,
+              tag: `drop-${product._id}`,
+            }, 'priceDrop').catch(() => {});
+          });
+        }
+      }
+    } catch(e) { /* Push optionnel */ }
 
     res.status(200).json({ success: true, message: 'Produit mis à jour', product });
   } catch (error) { next(error); }
