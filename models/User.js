@@ -55,6 +55,10 @@ const userSchema = new mongoose.Schema({
 
   // ── Vérifications ─────────────────────────────────────────────────────────
   isEmailVerified:          { type: Boolean, default: false },
+  referralCode:             { type: String, unique: true, sparse: true, index: true },
+  referredBy:               { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  referralCount:            { type: Number, default: 0 },
+  referralRewarded:         { type: Boolean, default: false },
   facebookId:               { type: String, default: undefined },
   isPhoneVerified:          { type: Boolean, default: false },
   emailVerificationToken:   String,
@@ -110,6 +114,12 @@ userSchema.index({ createdAt: -1 });
 
 // ── Pre-save : hasher le password ─────────────────────────────────────────────
 userSchema.pre('save', async function(next) {
+  // Générer un code de parrainage unique si absent
+  if (!this.referralCode) {
+    const base = (this.name || 'STB').replace(/[^A-Za-z]/g, '').toUpperCase().substring(0, 5) || 'STB';
+    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+    this.referralCode = base + rand;
+  }
   if (!this.isModified('password')) return next();
   try {
     const salt    = await bcrypt.genSalt(10);
