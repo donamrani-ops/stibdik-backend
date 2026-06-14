@@ -123,6 +123,19 @@ exports.sendMessage = async (req, res, next) => {
       });
     } catch(e) { /* Pusher optionnel */ }
 
+    // Notification push (nouveau message)
+    try {
+      const pushService = require('../services/pushService');
+      otherUsers.forEach(uid => {
+        pushService.sendToUser(uid, {
+          title: `💬 ${req.user.name}`,
+          body: preview || 'Nouveau message',
+          url: `/?conversation=${req.params.id}`,
+          tag: `msg-${req.params.id}`,
+        }, 'newMessage').catch(() => {});
+      });
+    } catch(e) { /* Push optionnel */ }
+
     const populated = await Message.findById(msg._id).populate('sender','name shopName').lean();
     res.status(201).json({ success: true, message: populated });
   } catch (err) { next(err); }
