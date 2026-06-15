@@ -59,6 +59,7 @@ const userSchema = new mongoose.Schema({
   referredBy:               { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   referralCount:            { type: Number, default: 0 },
   referralRewarded:         { type: Boolean, default: false },
+  boostCredit:              { type: Number, default: 0 },
   facebookId:               { type: String, default: undefined },
   isPhoneVerified:          { type: Boolean, default: false },
   emailVerificationToken:   String,
@@ -154,6 +155,9 @@ userSchema.methods.getPublicProfile = function() {
     shopLogo:        this.shopLogo,
     stats:           this.role === 'vendor' ? this.stats : undefined,
     addresses:       this.addresses,
+    referralCode:    this.referralCode,
+    referralCount:   this.referralCount || 0,
+    boostCredit:     this.boostCredit || 0,
     createdAt:       this.createdAt
   };
 };
