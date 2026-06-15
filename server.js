@@ -128,6 +128,7 @@ app.use('/api/chat',              require('./routes/chat'));
 app.use('/api/config',            require('./routes/config'));
 app.use('/api/offers',            require('./routes/offers'));
 app.use('/api/referral', referralRoutes);
+app.use('/api/analytics', require('./routes/analytics'));
   app.use('/api/push',     require('./routes/push'));
 // Stock notifications — chargement conditionnel (fichier optionnel)
 try { app.use('/api/stock-notifications', require('./routes/stock-notification')); } catch(e) { console.warn('⚠️ stock-notifications non chargé:', e.message); }
