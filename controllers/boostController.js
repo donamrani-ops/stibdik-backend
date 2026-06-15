@@ -60,6 +60,19 @@ exports.requestBoost = async (req, res, next) => {
       }
     }
 
+    // Appliquer le crédit Boost+ du vendeur (parrainage)
+    const User = require('../models/User');
+    const vendorUser = await User.findById(req.user._id);
+    const availableCredit = vendorUser.boostCredit || 0;
+    const creditUsed = Math.min(availableCredit, plan.price);
+    const amountDue = plan.price - creditUsed;
+
+    // Déduire le crédit utilisé
+    if (creditUsed > 0) {
+      vendorUser.boostCredit = availableCredit - creditUsed;
+      await vendorUser.save({ validateBeforeSave: false });
+    }
+
     const boost = await Boost.create({
       vendor:      req.user._id,
       product:     targetType === 'product' ? productId : null,
@@ -72,6 +85,8 @@ exports.requestBoost = async (req, res, next) => {
         rankBonus: plan.rankBonus,
         features:  plan.features
       },
+      creditUsed,
+      amountDue,
       durationHours: plan.duration,
       payment: {
         amount:    plan.price,
@@ -82,8 +97,15 @@ exports.requestBoost = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'Demande de boost envoyée. L\'admin va valider votre paiement sous 24h.',
-      boost
+      message: amountDue === 0
+        ? `Boost activé gratuitement grâce à votre crédit (${creditUsed} DH) ! Validation admin sous 24h.`
+        : creditUsed > 0
+          ? `Crédit de ${creditUsed} DH appliqué. Reste ${amountDue} DH à payer. Validation sous 24h.`
+          : 'Demande de boost envoyée. L\'admin va valider votre paiement sous 24h.',
+      boost,
+      creditUsed,
+      amountDue,
+      remainingCredit: vendorUser.boostCredit || 0
     });
   } catch (error) {
     next(error);
