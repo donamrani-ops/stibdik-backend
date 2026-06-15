@@ -31,6 +31,18 @@ exports.createOrder = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Numéro de téléphone requis pour la livraison' });
     }
 
+    // Appliquer le crédit Stibdik de l'acheteur (parrainage), si demandé
+    const User = require('../models/User');
+    const buyerUser = await User.findById(req.user._id);
+    const baseTotal = productDoc.price * quantity;
+    let creditApplied = 0;
+    if (req.body.useCredit && buyerUser && (buyerUser.boostCredit || 0) > 0) {
+      creditApplied = Math.min(buyerUser.boostCredit, baseTotal);
+      buyerUser.boostCredit = buyerUser.boostCredit - creditApplied;
+      await buyerUser.save({ validateBeforeSave: false });
+    }
+    const finalTotal = Math.max(0, baseTotal - creditApplied);
+
     const order = await Order.create({
       product,
       productSnapshot: {
@@ -52,7 +64,8 @@ exports.createOrder = async (req, res, next) => {
       },
       quantity,
       unitPrice:   productDoc.price,
-      totalAmount: productDoc.price * quantity,
+      totalAmount: finalTotal,
+      creditApplied,
       shippingAddress: shippingAddress || {
         fullName: resolvedName,
         phone:    resolvedPhone,
