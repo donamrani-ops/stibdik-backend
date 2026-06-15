@@ -33,6 +33,7 @@ exports.getMyReferral = async (req, res, next) => {
       referralCount: user.referralCount || 0,
       rewardPerReferral: REFERRAL_REWARD_REFERRER,
       totalEarned: (user.referralCount || 0) * REFERRAL_REWARD_REFERRER,
+      boostCredit: user.boostCredit || 0,
       referrals: referrals.map(r => ({
         name: r.name,
         date: r.createdAt,
@@ -73,45 +74,20 @@ exports.applyReferral = async (req, res, next) => {
     referee.referredBy = referrer._id;
     await referee.save({ validateBeforeSave: false });
 
-    // Incrémenter le compteur du parrain
+    // Incrémenter le compteur + créditer le parrain en crédit Boost+
     referrer.referralCount = (referrer.referralCount || 0) + 1;
+    referrer.boostCredit = (referrer.boostCredit || 0) + REFERRAL_REWARD_REFERRER;
     await referrer.save({ validateBeforeSave: false });
 
-    // Créer les coupons de récompense pour les deux parties
-    const now = new Date();
-    const expiry = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000); // 90 jours
-
-    // Coupon filleul
-    const refereeCoupon = await Coupon.create({
-      code: `BIENVENUE${referee._id.toString().slice(-5).toUpperCase()}`,
-      description: 'Bonus de bienvenue parrainage',
-      discountType: 'fixed',
-      discountValue: REFERRAL_REWARD_REFEREE,
-      minOrderAmount: 0,
-      maxUsesPerUser: 1,
-      isActive: true,
-      startsAt: now,
-      expiresAt: expiry,
-    }).catch(() => null);
-
-    // Coupon parrain
-    const referrerCoupon = await Coupon.create({
-      code: `MERCI${referrer._id.toString().slice(-5).toUpperCase()}${referrer.referralCount}`,
-      description: `Récompense parrainage (${referrer.referralCount} filleul${referrer.referralCount > 1 ? 's' : ''})`,
-      discountType: 'fixed',
-      discountValue: REFERRAL_REWARD_REFERRER,
-      minOrderAmount: 0,
-      maxUsesPerUser: 1,
-      isActive: true,
-      startsAt: now,
-      expiresAt: expiry,
-    }).catch(() => null);
+    // Créditer aussi le filleul (utilisable sur Boost+ s'il devient vendeur)
+    referee.boostCredit = (referee.boostCredit || 0) + REFERRAL_REWARD_REFEREE;
+    await referee.save({ validateBeforeSave: false });
 
     res.json({
       success: true,
-      message: `Parrainage validé ! Vous gagnez ${REFERRAL_REWARD_REFEREE} DH`,
+      message: `Parrainage validé ! Vous gagnez ${REFERRAL_REWARD_REFEREE} DH de crédit Stibdik`,
       reward: REFERRAL_REWARD_REFEREE,
-      refereeCoupon: refereeCoupon ? refereeCoupon.code : null,
+      boostCredit: referee.boostCredit,
     });
   } catch (error) { next(error); }
 };
