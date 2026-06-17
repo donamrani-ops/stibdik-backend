@@ -60,6 +60,22 @@ const userSchema = new mongoose.Schema({
   referralCount:            { type: Number, default: 0 },
   referralRewarded:         { type: Boolean, default: false },
   boostCredit:              { type: Number, default: 0 },
+  // ── Vérification vendeur (KYC) ──────────────────────────────────────────
+  sellerVerification: {
+    status:       { type: String, enum: ['none', 'pending', 'verified', 'rejected'], default: 'none' },
+    idCardFront:  { type: String, default: null },  // URL Cloudinary
+    idCardBack:   { type: String, default: null },
+    submittedAt:  { type: Date, default: null },
+    reviewedAt:   { type: Date, default: null },
+    rejectReason: { type: String, default: null },
+  },
+  // ── Abonnement Pro ──────────────────────────────────────────────────────
+  proSubscription: {
+    active:    { type: Boolean, default: false },
+    plan:      { type: String, enum: ['none', 'monthly', 'yearly'], default: 'none' },
+    startedAt: { type: Date, default: null },
+    expiresAt: { type: Date, default: null },
+  },
   facebookId:               { type: String, default: undefined },
   isPhoneVerified:          { type: Boolean, default: false },
   emailVerificationToken:   String,
@@ -158,6 +174,10 @@ userSchema.methods.getPublicProfile = function() {
     referralCode:    this.referralCode,
     referralCount:   this.referralCount || 0,
     boostCredit:     this.boostCredit || 0,
+    isSellerVerified: this.sellerVerification && this.sellerVerification.status === 'verified',
+    verificationStatus: this.sellerVerification ? this.sellerVerification.status : 'none',
+    isPro:           this.proSubscription && this.proSubscription.active &&
+                     (!this.proSubscription.expiresAt || this.proSubscription.expiresAt > new Date()),
     createdAt:       this.createdAt
   };
 };
