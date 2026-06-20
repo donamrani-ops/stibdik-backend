@@ -65,11 +65,29 @@ async function triggerRestockNotifications(productId, productName) {
 // Get all products with filters
 exports.getAllProducts = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, category, city, minPrice, maxPrice, type, sort = '-createdAt' } = req.query;
-    const products = await Product.advancedSearch({ category, city, minPrice, maxPrice, type, sort, page, limit });
+    const { page = 1, limit = 20, category, city, minPrice, maxPrice, type, brand, sort = '-createdAt' } = req.query;
+    const products = await Product.advancedSearch({ category, city, minPrice, maxPrice, type, brand, sort, page, limit });
     const enriched = await enrichWithBoostRank(products);
     const total    = await Product.countDocuments({ status: 'active' });
     res.status(200).json({ success: true, count: enriched.length, total, page: parseInt(page), pages: Math.ceil(total / limit), products: enriched });
+  } catch (error) { next(error); }
+};
+
+
+// Get all brands with product count
+exports.getBrands = async (req, res, next) => {
+  try {
+    const brands = await Product.aggregate([
+      { $match: { status: 'active', brand: { $nin: ['', null] } } },
+      { $group: { _id: { $toLower: '$brand' }, name: { $first: '$brand' }, count: { $sum: 1 } } },
+      { $sort: { count: -1, name: 1 } },
+      { $limit: 100 },
+    ]);
+    res.status(200).json({
+      success: true,
+      count: brands.length,
+      brands: brands.map(b => ({ name: b.name, count: b.count })),
+    });
   } catch (error) { next(error); }
 };
 
