@@ -62,10 +62,15 @@ productSchema.statics.advancedSearch = async function(params) {
   const {
     category, city, minPrice, maxPrice, type,
     sort = '-createdAt', page = 1, limit = 20,
-    vendor, status = 'active', query
+    vendor, status = 'active', query, brand
   } = params;
 
   const filter = { status };
+
+  // Filtre par marque (insensible à la casse)
+  if (brand) {
+    filter.brand = new RegExp('^' + String(brand).trim() + '$', 'i');
+  }
 
   if (category) {
     // Déjà un ObjectId valide → utiliser directement
