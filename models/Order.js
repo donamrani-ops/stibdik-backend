@@ -100,7 +100,9 @@ const orderSchema = new mongoose.Schema({
   },
   
   estimatedDelivery: Date,
+  shippedAt: Date,
   deliveredAt: Date,
+  autoConfirmed: { type: Boolean, default: false },
   cancelledAt: Date,
   cancellationReason: String,
   notes: String,
