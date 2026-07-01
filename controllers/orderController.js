@@ -99,6 +99,17 @@ exports.createOrder = async (req, res, next) => {
 // Get my orders (buyer)
 exports.getMyOrders = async (req, res, next) => {
   try {
+    // Auto-confirmation : les commandes expédiées depuis +7 jours passent en 'delivered'
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const cutoff = new Date(Date.now() - SEVEN_DAYS_MS);
+    await Order.updateMany(
+      { buyer: req.user._id, status: 'shipped', shippedAt: { $lte: cutoff } },
+      {
+        $set: { status: 'delivered', deliveredAt: new Date(), autoConfirmed: true },
+        $push: { statusHistory: { status: 'delivered', timestamp: new Date(), note: 'Réception confirmée automatiquement (7 jours)' } }
+      }
+    );
+
     const orders = await Order.find({ buyer: req.user._id })
       .sort('-createdAt')
       .populate('product', 'nameFr nameAr images')
@@ -145,12 +156,52 @@ exports.updateOrderStatus = async (req, res, next) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ success: false, message: 'Commande non trouvée' });
 
-    // Vérifier les droits
     const isVendor = order.vendor.toString() === req.user._id.toString();
     const isAdmin  = req.user.role === 'admin';
-    if (!isVendor && !isAdmin) {
+    const isBuyer  = order.buyer.toString() === req.user._id.toString();
+
+    // Règles de transition selon le rôle (modèle hybride) :
+    // - L'ACHETEUR ne peut que confirmer la réception : shipped -> delivered
+    // - Le VENDEUR gère le flux jusqu'à l'expédition (pas delivered lui-même)
+    // - L'ADMIN peut tout faire (arbitrage litiges)
+    if (isAdmin) {
+      // autorisé pour tout
+    } else if (isBuyer && !isVendor) {
+      // L'acheteur ne peut QUE confirmer la réception d'une commande expédiée
+      if (!(order.status === 'shipped' && status === 'delivered')) {
+        return res.status(403).json({
+          success: false,
+          message: "Vous ne pouvez que confirmer la réception d'une commande expédiée"
+        });
+      }
+    } else if (isVendor) {
+      // Le vendeur gère le flux mais ne peut pas marquer 'delivered' lui-même
+      // (c'est à l'acheteur de confirmer, ou auto-confirmation après 7 jours)
+      if (status === 'delivered') {
+        return res.status(403).json({
+          success: false,
+          message: "La réception doit être confirmée par l'acheteur"
+        });
+      }
+    } else {
       return res.status(403).json({ success: false, message: 'Non autorisé' });
     }
+
+    // Enregistrer les dates clés
+    if (status === 'shipped' && order.status !== 'shipped') {
+      order.shippedAt = new Date();
+    }
+    if (status === 'delivered' && order.status !== 'delivered') {
+      order.deliveredAt = new Date();
+    }
+
+    // Historique
+    order.statusHistory.push({
+      status,
+      timestamp: new Date(),
+      note: isBuyer ? 'Réception confirmée par le client' : (isAdmin ? 'Mis à jour par admin' : 'Mis à jour par le vendeur'),
+      updatedBy: req.user._id,
+    });
 
     order.status = status;
     await order.save();
