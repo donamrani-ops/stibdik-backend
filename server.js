@@ -17,6 +17,7 @@ const rateLimit      = require('express-rate-limit');
 const authRoutes        = require('./routes/auth');
 const userRoutes        = require('./routes/users');
 const productRoutes     = require('./routes/products');
+const brandRoutes      = require('./routes/brands');
 const categoryRoutes    = require('./routes/categories');
 const orderRoutes       = require('./routes/orders');
 const uploadRoutes      = require('./routes/upload');
@@ -112,6 +113,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth',        authRoutes);
 app.use('/api/users',       userRoutes);
 app.use('/api/products',    productRoutes);
+app.use('/api/brands',      brandRoutes);
 app.use('/api/categories',  categoryRoutes);
 app.use('/api/orders',      orderRoutes);
 app.use('/api/upload',      uploadRoutes);
