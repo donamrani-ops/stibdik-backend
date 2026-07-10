@@ -208,3 +208,73 @@ exports.notifyVendorNewOffer = async (vendorEmail, vendorName, buyerName, produc
     console.warn('notifyVendorNewOffer email failed:', err.message);
   }
 };
+
+// ── Email au vendeur quand une nouvelle demande de devis (RFQ) est reçue ─────
+exports.notifyVendorNewQuote = async ({ vendorEmail, vendorName, productName, requesterName, requesterEmail, requesterPhone, quantity, message }) => {
+  if (!process.env.SMTP_USER) return;
+  try {
+    await transporter.sendMail({
+      from:    `"Stibdik" <${FROM_EMAIL}>`,
+      to:      vendorEmail,
+      replyTo: requesterEmail || undefined,
+      subject: `📋 Nouvelle demande de devis — ${productName}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:600px;margin:0 auto;background:#f5f7f8">
+          <div style="background:linear-gradient(135deg,#00796B,#4CAF50);padding:32px 24px;border-radius:12px 12px 0 0;text-align:center">
+            <h1 style="color:#fff;margin:0;font-size:26px;font-weight:900">Stibdik</h1>
+            <p style="color:rgba(255,255,255,.85);margin:6px 0 0;font-size:13px">Marketplace Maroc</p>
+          </div>
+
+          <div style="background:#fff;padding:32px 24px;border:1px solid #e8ecef;border-top:none">
+            <h2 style="font-size:20px;font-weight:800;color:#1a1d23;margin:0 0 8px">
+              📋 Nouvelle demande de devis
+            </h2>
+            <p style="color:#555;font-size:14px;line-height:1.6;margin:0 0 24px">
+              Bonjour <strong>${vendorName}</strong>,<br><br>
+              <strong>${requesterName}</strong> souhaite un devis pour votre produit.
+            </p>
+
+            <div style="background:#f9f9f9;border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #e8ecef">
+              <div style="font-size:13px;color:#666;margin-bottom:4px">Produit</div>
+              <div style="font-size:16px;font-weight:800;color:#1a1d23;margin-bottom:16px">${productName}</div>
+
+              <div style="font-size:13px;color:#666;margin-bottom:4px">Quantité demandée</div>
+              <div style="font-size:16px;font-weight:800;color:#00796B;margin-bottom:16px">${quantity}</div>
+
+              <div style="font-size:13px;color:#666;margin-bottom:4px">Message</div>
+              <blockquote style="background:#fff;border-left:4px solid #00796B;padding:12px;margin:0 0 16px;font-size:14px;color:#333;border-radius:0 8px 8px 0">
+                ${message}
+              </blockquote>
+
+              <div style="font-size:13px;color:#666;margin-bottom:4px">Coordonnées du demandeur</div>
+              <div style="font-size:14px;color:#333">
+                ✉️ <a href="mailto:${requesterEmail}" style="color:#00796B">${requesterEmail}</a>
+                ${requesterPhone ? `<br>📞 <a href="tel:${requesterPhone}" style="color:#00796B">${requesterPhone}</a>` : ''}
+              </div>
+            </div>
+
+            <div style="text-align:center;margin:24px 0">
+              <a href="https://stibdik.pages.dev"
+                 style="display:inline-block;background:linear-gradient(135deg,#00796B,#4CAF50);
+                        color:#fff;padding:14px 28px;border-radius:50px;text-decoration:none;
+                        font-size:14px;font-weight:800;box-shadow:0 4px 16px rgba(0,121,107,.3)">
+                Voir et répondre au devis →
+              </a>
+            </div>
+
+            <p style="color:#9e9e9e;font-size:12px;text-align:center;margin:0">
+              Répondez vite pour ne pas perdre la vente ! ⚡
+            </p>
+          </div>
+
+          <div style="text-align:center;font-size:11px;color:#9e9e9e;padding:16px">
+            Stibdik — Marketplace Maroc ·
+            <a href="https://stibdik.pages.dev" style="color:#9e9e9e">stibdik.pages.dev</a>
+          </div>
+        </div>
+      `
+    });
+  } catch (err) {
+    console.warn('notifyVendorNewQuote email failed:', err.message);
+  }
+};
