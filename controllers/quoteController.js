@@ -1,6 +1,7 @@
 // Controller: Quotes (RFQ)
 const Quote = require('../models/Quote');
 const Product = require('../models/Product');
+const emailService = require('../services/emailService');
 
 // @desc    Créer une demande de devis
 // @route   POST /api/quotes
@@ -26,7 +27,7 @@ exports.createQuote = async (req, res, next) => {
     }
 
     // Récupérer le produit pour vérifier qu'il existe et qu'il est de type rfq
-    const productDoc = await Product.findById(product);
+    const productDoc = await Product.findById(product).populate('vendor', 'name email shopName');
     if (!productDoc) {
       return res.status(404).json({ success: false, message: 'Produit non trouvé' });
     }
@@ -46,7 +47,7 @@ exports.createQuote = async (req, res, next) => {
     const quote = await Quote.create({
       product,
       productSnapshot: snapshot,
-      vendor: productDoc.vendor,
+      vendor: productDoc.vendor._id || productDoc.vendor,
       requester: {
         name: String(name).trim(),
         email: String(email).trim().toLowerCase(),
@@ -58,6 +59,27 @@ exports.createQuote = async (req, res, next) => {
       status: 'new',
       isUnread: true
     });
+
+    // Notifier le vendeur par email (non bloquant)
+    try {
+      const vendorEmail = productDoc.vendor?.email;
+      if (vendorEmail) {
+        const vendorName  = productDoc.vendor?.shopName || productDoc.vendor?.name || 'Vendeur';
+        const productName = productDoc.nameFr || productDoc.nameAr || 'Produit';
+        await emailService.notifyVendorNewQuote({
+          vendorEmail,
+          vendorName,
+          productName,
+          requesterName:  String(name).trim(),
+          requesterEmail: String(email).trim().toLowerCase(),
+          requesterPhone: phone ? String(phone).trim() : '',
+          quantity:       parseInt(quantity, 10),
+          message:        String(message).trim()
+        });
+      }
+    } catch (mailErr) {
+      console.warn('notifyVendorNewQuote failed:', mailErr.message);
+    }
 
     res.status(201).json({
       success: true,
