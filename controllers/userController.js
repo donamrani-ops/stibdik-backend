@@ -2,6 +2,7 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const AuditLog = require('../models/AuditLog');
+const { generateToken } = require('../middleware/auth');
 
 // Get current user profile
 exports.getProfile = async (req, res, next) => {
@@ -21,6 +22,60 @@ exports.updateProfile = async (req, res, next) => {
       { new: true, runValidators: true }
     ).select('-password');
     res.status(200).json({ success: true, message: 'Profil mis à jour', user });
+  } catch (error) { next(error); }
+};
+
+// ── POST /api/users/become-vendor ─────────────────────────────────────────────
+// Self-service : un customer devient vendor immédiatement (vérif ID optionnelle après)
+exports.becomeVendor = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+
+    // Déjà vendor ou admin : rien à faire
+    if (user.role === 'vendor' || user.role === 'admin') {
+      return res.status(200).json({
+        success: true,
+        message: 'Vous êtes déjà vendeur',
+        alreadyVendor: true,
+        token: generateToken(user._id),
+        user: user.getPublicProfile()
+      });
+    }
+
+    if (user.role !== 'customer') {
+      return res.status(403).json({ success: false, message: 'Action non autorisée pour ce compte' });
+    }
+
+    // Passage en vendor
+    user.role = 'vendor';
+
+    // Nom de boutique optionnel fourni à l'inscription vendeur, sinon fallback sur le nom
+    const { shopName, shopDescription } = req.body || {};
+    if (shopName && String(shopName).trim()) {
+      user.shopName = String(shopName).trim().slice(0, 100);
+    } else if (!user.shopName) {
+      user.shopName = user.name;
+    }
+    if (shopDescription && String(shopDescription).trim()) {
+      user.shopDescription = String(shopDescription).trim();
+    }
+
+    await user.save({ validateBeforeSave: false });
+
+    try {
+      await AuditLog.log(user, 'user.role_change',
+        { type: 'user', id: user._id, name: user.name }, { newRole: 'vendor', selfUpgrade: true }, req);
+    } catch (e) { /* log non bloquant */ }
+
+    res.status(200).json({
+      success: true,
+      message: 'Félicitations ! Vous êtes maintenant vendeur.',
+      token: generateToken(user._id),
+      user: user.getPublicProfile()
+    });
   } catch (error) { next(error); }
 };
 
