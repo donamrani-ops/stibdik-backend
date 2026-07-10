@@ -18,6 +18,7 @@ router.use(protect);
 router.get('/profile', uc.getProfile);
 router.put('/profile', uc.updateProfile);
 router.post('/change-password', uc.changePassword);
+router.post('/become-vendor', uc.becomeVendor);
 
 // ── Admin ───────────────────────────────────────────────────
 // Routes fixes avant /:id
